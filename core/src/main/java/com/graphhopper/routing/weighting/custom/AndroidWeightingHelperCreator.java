@@ -778,10 +778,9 @@ public class AndroidWeightingHelperCreator {
 
         code.loadConstant(globalMaxSpeedValue, globalMaxSpeed);
 
-        Label minLabel = new Label();
-        code.compare(Comparison.LT, minLabel, result, globalMaxSpeedValue);
-        code.move(result, globalMaxSpeedValue);
-        code.mark(minLabel);
+        MethodId<Math, Double> minMethod =
+                TypeId.get(Math.class).getMethod(TypeId.DOUBLE, "min", TypeId.DOUBLE, TypeId.DOUBLE);
+        code.invokeStatic(minMethod, result, result, globalMaxSpeedValue);
 
         code.returnValue(result);
     }
@@ -930,10 +929,9 @@ public class AndroidWeightingHelperCreator {
 
     private static void executeOperation(Code code, LocalStatement statement, Local<Double> result) {
         if (statement.operation == Statement.Op.LIMIT) {
-            Label limitLabel = new Label();
-            code.compare(Comparison.LT, limitLabel, result, statement.operationValue);
-            code.move(result, statement.operationValue);
-            code.mark(limitLabel);
+            MethodId<Math, Double> minMethod =
+                    TypeId.get(Math.class).getMethod(TypeId.DOUBLE, "min", TypeId.DOUBLE, TypeId.DOUBLE);
+            code.invokeStatic(minMethod, result, result, statement.operationValue);
         } else {
             code.op(BinaryOp.MULTIPLY, result, result, statement.operationValue);
         }
