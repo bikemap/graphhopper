@@ -73,6 +73,7 @@ import static com.graphhopper.util.Parameters.Algorithms.RoundTrip;
  * @see GraphHopperAPI
  */
 public class GraphHopper implements GraphHopperAPI {
+    private static boolean isAndroid = false;
     private final Logger logger = LoggerFactory.getLogger(getClass());
     private final Map<String, Profile> profilesByName = new LinkedHashMap<>();
     private final String fileLockName = "gh.lock";
@@ -124,6 +125,14 @@ public class GraphHopper implements GraphHopperAPI {
 
     public GraphHopper(JsonFeatureCollection landmarkSplittingFeatureCollection) {
         this.landmarkSplittingFeatureCollection = landmarkSplittingFeatureCollection;
+    }
+
+    public static boolean isAndroid() {
+        return isAndroid;
+    }
+
+    public static void setIsAndroid(boolean isAndroid) {
+        GraphHopper.isAndroid = isAndroid;
     }
 
     public EncodingManager.Builder getEncodingManagerBuilder() {
