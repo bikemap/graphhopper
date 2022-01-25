@@ -74,6 +74,7 @@ import static com.graphhopper.util.Parameters.Algorithms.RoundTrip;
  * @author Peter Karich
  */
 public class GraphHopper {
+    private static boolean isAndroid = false;
     private static final Logger logger = LoggerFactory.getLogger(GraphHopper.class);
     private final Map<String, Profile> profilesByName = new LinkedHashMap<>();
     private final String fileLockName = "gh.lock";
@@ -141,6 +142,14 @@ public class GraphHopper {
     public GraphHopper setFlagEncodersString(String flagEncodersString) {
         this.flagEncodersString = flagEncodersString;
         return this;
+    }
+
+    public static boolean isAndroid() {
+        return isAndroid;
+    }
+
+    public static void setIsAndroid(boolean isAndroid) {
+        GraphHopper.isAndroid = isAndroid;
     }
 
     public EncodingManager getEncodingManager() {
