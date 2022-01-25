@@ -72,6 +72,7 @@ import static com.graphhopper.util.Parameters.Algorithms.RoundTrip;
  * @author Peter Karich
  */
 public class GraphHopper {
+    private static boolean isAndroid = false;
     private static final Logger logger = LoggerFactory.getLogger(GraphHopper.class);
     private MaxSpeedCalculator maxSpeedCalculator;
     private final Map<String, Profile> profilesByName = new LinkedHashMap<>();
@@ -132,6 +133,14 @@ public class GraphHopper {
     private String dateRangeParserString = "";
     private String encodedValuesString = "";
     private String vehiclesString = "";
+
+    public static boolean isAndroid() {
+        return isAndroid;
+    }
+
+    public static void setIsAndroid(boolean isAndroid) {
+        GraphHopper.isAndroid = isAndroid;
+    }
 
     public GraphHopper setEncodedValuesString(String encodedValuesString) {
         this.encodedValuesString = encodedValuesString;
