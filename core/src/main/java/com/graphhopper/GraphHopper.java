@@ -428,7 +428,7 @@ public class GraphHopper implements GraphHopperAPI {
      * Reads the configuration from a {@link GraphHopperConfig} object which can be manually filled, or more typically
      * is read from `config.yml`.
      */
-    public GraphHopper init(GraphHopperConfig ghConfig) {
+    public GraphHopper init(GraphHopperConfig ghConfig, String absolutePath) {
         // disabling_allowed config options were removed for GH 3.0
         if (ghConfig.has("routing.ch.disabling_allowed"))
             throw new IllegalArgumentException("The 'routing.ch.disabling_allowed' configuration option is no longer supported");
@@ -441,7 +441,13 @@ public class GraphHopper implements GraphHopperAPI {
         if (!isEmpty(tmpOsmFile))
             osmFile = tmpOsmFile;
 
-        String graphHopperFolder = ghConfig.getString("graph.location", "");
+        String graphHopperFolder;
+        if (absolutePath != null) {
+            graphHopperFolder = absolutePath + "/" + ghConfig.getString("graph.location", "");
+        } else {
+            graphHopperFolder = ghConfig.getString("graph.location", "");
+        }
+
         if (isEmpty(graphHopperFolder) && isEmpty(ghLocation)) {
             if (isEmpty(osmFile))
                 throw new IllegalArgumentException("If no graph.location is provided you need to specify an OSM file.");
