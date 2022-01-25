@@ -17,6 +17,7 @@
  */
 package com.graphhopper.routing.weighting.custom;
 
+import com.graphhopper.GraphHopper;
 import com.graphhopper.json.Statement;
 import com.graphhopper.routing.ev.*;
 import com.graphhopper.routing.util.EncodingManager;
@@ -95,7 +96,11 @@ public class CustomModelParser {
         if (CACHE_SIZE > 0 && clazz == null)
             clazz = CACHE.get(key);
         if (clazz == null) {
-            clazz = createClazz(customModel, lookup, globalMaxSpeed);
+            if (GraphHopper.isAndroid()) {
+                clazz = AndroidWeightingHelperCreator.createClazz(customModel, lookup, globalMaxSpeed);
+            } else {
+                clazz = createClazz(customModel, lookup, globalMaxSpeed);
+            }
             if (customModel.isInternal()) {
                 INTERNAL_CACHE.put(key, clazz);
                 if (INTERNAL_CACHE.size() > 100) {
