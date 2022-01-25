@@ -491,7 +491,7 @@ public class GraphHopper {
      * setters, because this way the init method won't apply defaults to configuration options you already chose using
      * the setters.
      */
-    public GraphHopper init(GraphHopperConfig ghConfig, String absolutePath) {
+    public GraphHopper init(GraphHopperConfig ghConfig) {
         ensureNotLoaded();
         // disabling_allowed config options were removed for GH 3.0
         if (ghConfig.has("routing.ch.disabling_allowed"))
@@ -505,13 +505,7 @@ public class GraphHopper {
         if (!isEmpty(tmpOsmFile))
             osmFile = tmpOsmFile;
 
-        String graphHopperFolder;
-        if (absolutePath != null) {
-            graphHopperFolder = absolutePath + "/" + ghConfig.getString("graph.location", "");
-        } else {
-            graphHopperFolder = ghConfig.getString("graph.location", "");
-        }
-
+        String graphHopperFolder = ghConfig.getString("graph.location", "");
         if (isEmpty(graphHopperFolder) && isEmpty(ghLocation)) {
             if (isEmpty(osmFile))
                 throw new IllegalArgumentException("If no graph.location is provided you need to specify an OSM file.");
