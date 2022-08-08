@@ -25,6 +25,9 @@ import com.graphhopper.http.GHPointParam;
 import com.graphhopper.http.ProfileResolver;
 import com.graphhopper.jackson.MultiException;
 import com.graphhopper.jackson.ResponsePathSerializer;
+import com.graphhopper.navigation.DistanceConfig;
+import com.graphhopper.navigation.DistanceUtils;
+import com.graphhopper.navigation.NavigateResponseConverter;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.GHPoint;
 import io.dropwizard.jersey.params.AbstractParam;
@@ -38,6 +41,7 @@ import javax.validation.constraints.NotNull;
 import javax.ws.rs.*;
 import javax.ws.rs.core.*;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import static com.graphhopper.util.Parameters.Details.PATH_DETAILS;
@@ -59,12 +63,14 @@ public class RouteResource {
     private final GraphHopper graphHopper;
     private final ProfileResolver profileResolver;
     private final Boolean hasElevation;
+    private final TranslationMap translationMap;
 
     @Inject
-    public RouteResource(GraphHopper graphHopper, ProfileResolver profileResolver, @Named("hasElevation") Boolean hasElevation) {
+    public RouteResource(GraphHopper graphHopper, ProfileResolver profileResolver, @Named("hasElevation") Boolean hasElevation, TranslationMap translationMap) {
         this.graphHopper = graphHopper;
         this.profileResolver = profileResolver;
         this.hasElevation = hasElevation;
+        this.translationMap = translationMap;
     }
 
     @GET
@@ -177,6 +183,7 @@ public class RouteResource {
         boolean enableElevation = request.getHints().getBool("elevation", false);
         boolean calcPoints = request.getHints().getBool(CALC_POINTS, true);
         boolean pointsEncoded = request.getHints().getBool("points_encoded", true);
+        String responseType = request.getHints().getString("type", "json");
 
         double took = sw.stop().getMillisDouble();
         String infoStr = httpReq.getRemoteAddr() + " " + httpReq.getLocale() + " " + httpReq.getHeader("User-Agent");
@@ -191,7 +198,15 @@ public class RouteResource {
 
         if (ghResponse.hasErrors()) {
             logger.error(logStr + ", errors:" + ghResponse.getErrors());
-            throw new MultiException(ghResponse.getErrors());
+
+            if (responseType.equals("mapbox")) {
+                // Mapbox specifies 422 return type for input errors
+                return Response.status(422).entity(NavigateResponseConverter.convertFromGHResponseError(ghResponse)).
+                        header("X-GH-Took", "" + Math.round(took * 1000)).
+                        build();
+            } else {
+                throw new MultiException(ghResponse.getErrors());
+            }
         } else {
             logger.info(logStr + ", alternatives: " + ghResponse.getAll().size()
                     + ", distance0: " + ghResponse.getBest().getDistance()
@@ -199,10 +214,28 @@ public class RouteResource {
                     + ", time0: " + Math.round(ghResponse.getBest().getTime() / 60000f) + "min"
                     + ", points0: " + ghResponse.getBest().getPoints().size()
                     + ", debugInfo: " + ghResponse.getDebugInfo());
-            return Response.ok(ResponsePathSerializer.jsonObject(ghResponse, instructions, calcPoints, enableElevation, pointsEncoded, took)).
-                    header("X-GH-Took", "" + Math.round(took)).
-                    type(MediaType.APPLICATION_JSON).
-                    build();
+
+            if (responseType.equals("mapbox")) {
+                String voiceUnits = request.getHints().getString("voice_units", "metric");
+                DistanceUtils.Unit unit;
+                if (voiceUnits.equals("metric")) {
+                    unit = DistanceUtils.Unit.METRIC;
+                } else {
+                    unit = DistanceUtils.Unit.IMPERIAL;
+                }
+
+                Locale locale = request.getLocale();
+
+                DistanceConfig config = new DistanceConfig(unit, translationMap, locale);
+                return Response.ok(NavigateResponseConverter.convertFromGHResponse(ghResponse, translationMap, locale, config)).
+                        header("X-GH-Took", "" + Math.round(took * 1000)).
+                        build();
+            } else {
+                return Response.ok(ResponsePathSerializer.jsonObject(ghResponse, instructions, calcPoints, enableElevation, pointsEncoded, took)).
+                        header("X-GH-Took", "" + Math.round(took)).
+                        type(MediaType.APPLICATION_JSON).
+                        build();
+            }
         }
     }
 
