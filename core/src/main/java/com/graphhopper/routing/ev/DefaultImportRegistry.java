@@ -22,9 +22,13 @@ import com.graphhopper.routing.util.*;
 import com.graphhopper.routing.util.parsers.*;
 import com.graphhopper.util.PMap;
 
+import java.util.List;
+
 public class DefaultImportRegistry implements ImportRegistry {
     @Override
     public ImportUnit createImportUnit(String name) {
+        List<String> replicatedTags = BMWeight.replicatedTags();
+
         if (Roundabout.KEY.equals(name))
             return ImportUnit.create(name, props -> Roundabout.create(),
                     (lookup, props) -> new OSMRoundaboutParser(
@@ -330,6 +334,12 @@ public class DefaultImportRegistry implements ImportRegistry {
                     (lookup, props) -> new MountainBikePriorityParser(lookup),
                     VehicleSpeed.key("mtb"), BikeNetwork.KEY
             );
+
+        else if (replicatedTags.contains(name))
+            return ImportUnit.create(name, props -> BMWeight.create(name),
+                    (lookup, props) -> new BMWeightParser(lookup.getIntEncodedValue(name))
+            );
+
         return null;
     }
 }
