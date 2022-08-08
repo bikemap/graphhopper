@@ -18,11 +18,15 @@
 package com.graphhopper.routing.ev;
 
 import com.graphhopper.util.PMap;
+import java.util.List;
 
 public class DefaultEncodedValueFactory implements EncodedValueFactory {
 
     @Override
     public EncodedValue create(String name, PMap properties) {
+
+        List<String> replicatedTags = BMWeight.replicatedTags();
+
         if (Roundabout.KEY.equals(name)) {
             return Roundabout.create();
         } else if (GetOffBike.KEY.equals(name)) {
@@ -97,6 +101,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             return new EnumEncodedValue<>(Crossing.KEY, Crossing.class);
         } else if (FerrySpeed.KEY.equals(name)) {
             return FerrySpeed.create();
+        } else if (replicatedTags.contains(name)) {
+            return BMWeight.create(name);
         } else {
             throw new IllegalArgumentException("DefaultEncodedValueFactory cannot find EncodedValue " + name);
         }

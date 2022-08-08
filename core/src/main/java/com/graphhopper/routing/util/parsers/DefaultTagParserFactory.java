@@ -22,10 +22,14 @@ import com.graphhopper.routing.util.FerrySpeedCalculator;
 import com.graphhopper.routing.util.TransportationMode;
 import com.graphhopper.util.PMap;
 
+import java.util.List;
+
 public class DefaultTagParserFactory implements TagParserFactory {
 
     @Override
     public TagParser create(EncodedValueLookup lookup, String name, PMap properties) {
+        List<String> replicatedTags = BMWeight.replicatedTags();
+
         if (Roundabout.KEY.equals(name))
             return new OSMRoundaboutParser(lookup.getBooleanEncodedValue(Roundabout.KEY));
         else if (name.equals(RoadClass.KEY))
@@ -86,6 +90,8 @@ public class DefaultTagParserFactory implements TagParserFactory {
             return new OSMCrossingParser(lookup.getEnumEncodedValue(Crossing.KEY, Crossing.class));
         else if (name.equals(FerrySpeed.KEY))
             return new FerrySpeedCalculator(lookup.getDecimalEncodedValue(FerrySpeed.KEY));
+        else if (replicatedTags.contains(name))
+            return new BMWeightParser(lookup.getIntEncodedValue(name));
         return null;
     }
 }
