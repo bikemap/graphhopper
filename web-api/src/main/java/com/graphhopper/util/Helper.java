@@ -324,7 +324,7 @@ public class Helper {
     }
 
     public static double round6(double value) {
-        return round(value, 6);
+        return round(value, 7);
     }
 
     public static double round4(double value) {
