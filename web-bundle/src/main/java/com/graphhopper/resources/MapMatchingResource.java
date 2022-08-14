@@ -192,7 +192,7 @@ public class MapMatchingResource {
         for (int emIndex = 0; emIndex < result.getEdgeMatches().size(); emIndex++) {
             ObjectNode link = links.addObject();
             EdgeMatch edgeMatch = result.getEdgeMatches().get(emIndex);
-            PointList pointList = edgeMatch.getEdgeState().fetchWayGeometry(emIndex == 0 ? FetchMode.ALL : FetchMode.PILLAR_AND_ADJ);
+            PointList pointList = edgeMatch.getEdgeState().fetchWayGeometry(FetchMode.ALL);
             final ObjectNode geometry = link.putObject("geometry");
             if (pointList.size() < 2) {
                 geometry.putPOJO("coordinates", pointsEncoded ? ResponsePathSerializer.encodePolyline(pointList, elevation, 1e5) : pointList.toLineString(elevation));
