@@ -61,10 +61,16 @@ public class OSMRoadEnvironmentParser implements TagParser {
             roadEnvironment = CYCLE_LEFT_LANE;
         else if (readerWay.hasTag("cycleway:right:lane") || readerWay.hasTag("cycleway:right", "lane"))
             roadEnvironment = CYCLE_RIGHT_LANE;
+        else if (readerWay.hasTag("cycleway:both", "no"))
+            roadEnvironment = CYCLE_BOTH_NO;
         else if (readerWay.hasTag("cycleway:left"))
             roadEnvironment = CYCLE_LEFT;
         else if (readerWay.hasTag("cycleway:right"))
             roadEnvironment = CYCLE_RIGHT;
+        else if (readerWay.hasTag("cycleway:left", "no"))
+            roadEnvironment = CYCLE_LEFT_NO;
+        else if (readerWay.hasTag("cycleway:right", "no"))
+            roadEnvironment = CYCLE_RIGHT_NO;
         else if (readerWay.hasTag("cycleway:right:oneway"))
             roadEnvironment = CYCLE_RIGHT_ONEWAY;
         else if (readerWay.hasTag("cycleway:left:oneway"))
