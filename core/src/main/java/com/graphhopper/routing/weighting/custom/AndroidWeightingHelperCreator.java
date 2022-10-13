@@ -1,26 +1,8 @@
 package com.graphhopper.routing.weighting.custom;
 
-import com.android.dx.BinaryOp;
-import com.android.dx.Code;
-import com.android.dx.Comparison;
-import com.android.dx.DexMaker;
-import com.android.dx.FieldId;
-import com.android.dx.Label;
-import com.android.dx.Local;
-import com.android.dx.MethodId;
-import com.android.dx.TypeId;
+import com.android.dx.*;
 import com.graphhopper.json.Statement;
-import com.graphhopper.routing.ev.DecimalEncodedValue;
-import com.graphhopper.routing.ev.EncodedValue;
-import com.graphhopper.routing.ev.EncodedValueLookup;
-import com.graphhopper.routing.ev.IntEncodedValue;
-import com.graphhopper.routing.ev.RoadAccess;
-import com.graphhopper.routing.ev.RoadClass;
-import com.graphhopper.routing.ev.RoadEnvironment;
-import com.graphhopper.routing.ev.RouteNetwork;
-import com.graphhopper.routing.ev.StringEncodedValue;
-import com.graphhopper.routing.ev.Surface;
-import com.graphhopper.routing.ev.Toll;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.weighting.custom.boolean_expression_helper.BExprPreParseException;
 import com.graphhopper.routing.weighting.custom.boolean_expression_helper.BExprTree;
@@ -28,21 +10,13 @@ import com.graphhopper.util.CustomModel;
 import com.graphhopper.util.EdgeIteratorState;
 import com.graphhopper.util.JsonFeature;
 import com.graphhopper.util.shapes.Polygon;
-
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.Polygonal;
 import org.locationtech.jts.geom.prep.PreparedPolygon;
-
 import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
-import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -714,7 +688,7 @@ public class AndroidWeightingHelperCreator {
         Comparator comparator;
         T value;
         Class<T> valueType;
-        Label label = new Label();
+        Map<Integer, Label> labels = new HashMap<>();
     }
 
     private enum Comparator {
@@ -846,9 +820,9 @@ public class AndroidWeightingHelperCreator {
 
     @SuppressWarnings("unchecked")
     private static void generateConditions(
-        Code code,
-        List<LocalStatement> statements,
-        Local<Double> result
+            Code code,
+            List<LocalStatement> statements,
+            Local<Double> result
     ) {
         Label exitLabel = new Label();
         for (int s = 0; s < statements.size(); s++) {
@@ -862,13 +836,14 @@ public class AndroidWeightingHelperCreator {
                     code.mark(orLabels.get(i));
                     for (int j = 0; j < statement.expressions.get(i).size(); j++) {
                         Condition condition = statement.conditions.get(statement.expressions.get(i).get(j));
-                        code.mark(condition.label);
+                        condition.labels.put(i, new Label());
+                        code.mark((Label) condition.labels.get(i));
 
                         Label trueLabel;
                         if (j >= statement.expressions.get(i).size() - 1) {
                             trueLabel = operationLabel;
                         } else {
-                            trueLabel = statement.conditions.get(statement.expressions.get(i).get(j + 1)).label;
+                            trueLabel = (Label) statement.conditions.get(statement.expressions.get(i).get(j + 1)).labels.get(i);
                         }
                         Label falseLabel;
                         if (i >= statement.expressions.size() - 1) {
