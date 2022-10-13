@@ -586,8 +586,10 @@ public class AndroidWeightingHelperCreator {
                     simplifiedExpression = statementCondition
                             .replaceAll("\\|", "+")
                             .replaceAll("&", "*")
+                            .replaceAll("\\(", "")
+                            .replaceAll("\\)", "")
                             .replaceAll(" ", "")
-                            .trim();;
+                            .trim();
                 } else {
                     BExprTree expressionTree = new BExprTree(statementCondition);
                     simplifiedExpression = expressionTree.getTruthTable().getSOP(expressionTree.getVars())
