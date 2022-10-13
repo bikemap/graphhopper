@@ -298,7 +298,7 @@ public class AndroidWeightingHelperCreator {
         List<AreaVariableContainer> areaVariableContainers = new ArrayList<>();
 
         localVariables.forEach(localVariable -> {
-            if (localVariable.isArea) {
+            if (!localVariable.isArea) {
                 EncodedValueVariableContainer container = new EncodedValueVariableContainer();
                 container.name = localVariable.name;
                 container.encodedName = localVariable.name + "_enc";
