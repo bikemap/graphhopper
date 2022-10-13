@@ -577,10 +577,23 @@ public class AndroidWeightingHelperCreator {
                 statementCondition = statementCondition
                     .replaceAll("\\|\\|", "|")
                     .replaceAll("&&", "&");
-                BExprTree expressionTree = new BExprTree(statementCondition);
-                String simplifiedExpression = expressionTree.getTruthTable().getSOP(expressionTree.getVars())
-                    .replaceAll(" ", "")
-                    .trim();
+
+                String simplifiedExpression;
+                if (
+                        !statementCondition.contains("&") || !statementCondition.contains("|") ||
+                                (!statementCondition.contains("&") && !statementCondition.contains("|"))
+                ) {
+                    simplifiedExpression = statementCondition
+                            .replaceAll("\\|", "+")
+                            .replaceAll("&", "*")
+                            .replaceAll(" ", "")
+                            .trim();;
+                } else {
+                    BExprTree expressionTree = new BExprTree(statementCondition);
+                    simplifiedExpression = expressionTree.getTruthTable().getSOP(expressionTree.getVars())
+                            .replaceAll(" ", "")
+                            .trim();
+                }
 
                 for (String orExpressions : simplifiedExpression.split("\\+")) {
                     expressions.add(
