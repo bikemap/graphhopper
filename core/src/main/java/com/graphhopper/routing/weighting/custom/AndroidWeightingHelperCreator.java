@@ -836,7 +836,7 @@ public class AndroidWeightingHelperCreator {
                     code.mark(orLabels.get(i));
                     for (int j = 0; j < statement.expressions.get(i).size(); j++) {
                         Condition condition = statement.conditions.get(statement.expressions.get(i).get(j));
-                        if (condition.labels.containsKey(i)) {
+                        if (!condition.labels.containsKey(i)) {
                             condition.labels.put(i, new Label());
                         }
                         code.mark((Label) condition.labels.get(i));
