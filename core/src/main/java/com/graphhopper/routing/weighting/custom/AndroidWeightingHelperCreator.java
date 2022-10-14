@@ -867,7 +867,7 @@ public class AndroidWeightingHelperCreator {
                                     condition.doubleComparisonResult,
                                     condition.leftLocal,
                                     condition.rightLocal,
-                                    0
+                                    1
                             );
 
                             code.loadConstant(condition.doubleComparisonAnchor, 0);
