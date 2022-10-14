@@ -857,12 +857,32 @@ public class AndroidWeightingHelperCreator {
                             falseLabel = orLabels.get(i + 1);
                         }
 
-                        code.compare(
-                            condition.comparator.getComparison(),
-                            trueLabel,
-                            condition.leftLocal,
-                            condition.rightLocal
-                        );
+                        if (condition.valueType == Double.class) {
+                            Local<Integer> doubleComparisonResult = code.newLocal(TypeId.INT);
+                            code.compareFloatingPoint(
+                                    doubleComparisonResult,
+                                    condition.leftLocal,
+                                    condition.rightLocal,
+                                    0
+                            );
+
+                            Local<Integer> doubleComparisonAnchor = code.newLocal(TypeId.INT);
+                            code.loadConstant(doubleComparisonAnchor, 0);
+
+                            code.compare(
+                                    condition.comparator.getComparison(),
+                                    trueLabel,
+                                    doubleComparisonResult,
+                                    doubleComparisonAnchor
+                            );
+                        } else {
+                            code.compare(
+                                    condition.comparator.getComparison(),
+                                    trueLabel,
+                                    condition.leftLocal,
+                                    condition.rightLocal
+                            );
+                        }
                         code.jump(falseLabel);
                     }
                 }
