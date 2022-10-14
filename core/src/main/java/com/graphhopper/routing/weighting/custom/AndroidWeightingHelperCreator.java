@@ -684,6 +684,8 @@ public class AndroidWeightingHelperCreator {
         LocalVariable localVariable;
         Local<T> leftLocal;
         Local<T> rightLocal;
+        Local<Integer> doubleComparisonResult;
+        Local<Integer> doubleComparisonAnchor;
         Local<String> rightLocalHelper;
         Comparator comparator;
         T value;
@@ -783,6 +785,9 @@ public class AndroidWeightingHelperCreator {
                 //noinspection unchecked
                 condition.rightLocal = code.newLocal(TypeId.get(condition.valueType));
                 condition.rightLocalHelper = code.newLocal(TypeId.STRING);
+
+                condition.doubleComparisonResult = code.newLocal(TypeId.INT);
+                condition.doubleComparisonAnchor = code.newLocal(TypeId.INT);
             });
         });
     }
@@ -858,22 +863,20 @@ public class AndroidWeightingHelperCreator {
                         }
 
                         if (condition.valueType == Double.class) {
-                            Local<Integer> doubleComparisonResult = code.newLocal(TypeId.INT);
                             code.compareFloatingPoint(
-                                    doubleComparisonResult,
+                                    condition.doubleComparisonResult,
                                     condition.leftLocal,
                                     condition.rightLocal,
                                     0
                             );
 
-                            Local<Integer> doubleComparisonAnchor = code.newLocal(TypeId.INT);
-                            code.loadConstant(doubleComparisonAnchor, 0);
+                            code.loadConstant(condition.doubleComparisonAnchor, 0);
 
                             code.compare(
                                     condition.comparator.getComparison(),
                                     trueLabel,
-                                    doubleComparisonResult,
-                                    doubleComparisonAnchor
+                                    condition.doubleComparisonResult,
+                                    condition.doubleComparisonAnchor
                             );
                         } else {
                             code.compare(
