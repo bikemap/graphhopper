@@ -614,7 +614,7 @@ public class AndroidWeightingHelperCreator {
         try {
             condition.value = Double.parseDouble(value);
             // The value is double
-            condition.valueType = Double.class;
+            condition.valueType = double.class;
             return;
         } catch (NumberFormatException exception) {
             // The value is not double
@@ -862,7 +862,7 @@ public class AndroidWeightingHelperCreator {
                             falseLabel = orLabels.get(i + 1);
                         }
 
-                        if (condition.valueType == Double.class) {
+                        if (condition.valueType == double.class) {
                             code.compareFloatingPoint(
                                     condition.doubleComparisonResult,
                                     condition.leftLocal,
