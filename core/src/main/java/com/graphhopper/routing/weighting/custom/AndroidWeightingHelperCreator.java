@@ -147,6 +147,14 @@ public class AndroidWeightingHelperCreator {
 
             Comparator[] comparators = Comparator.values();
 
+            if (
+                    statement.getCondition() == null ||
+                            statement.getCondition().trim().equals("") ||
+                            statement.getCondition().trim().equals("null")
+            ) {
+                return variableNames;
+            }
+
             for (String orStatements : statement.getCondition()
                     .replaceAll("\\(|\\)", "")
                     .split("\\|\\|")
