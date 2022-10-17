@@ -812,17 +812,21 @@ public class AndroidWeightingHelperCreator {
 
     @SuppressWarnings("unchecked")
     private static void prepareLocalVariables(Code code, List<LocalStatement> statements) {
+        if (statements.isEmpty()) return;
+
         statements.forEach(statement -> {
             statement.operationValue = code.newLocal(TypeId.DOUBLE);
-            statement.conditions.forEach(condition -> {
-                condition.leftLocal = code.newLocal(TypeId.get(condition.valueType));
-                condition.leftEncodedLocal = code.newLocal(TypeId.get(condition.encodedValueType));
-                condition.rightLocal = code.newLocal(TypeId.get(condition.valueType));
-                condition.rightLocalHelper = code.newLocal(TypeId.STRING);
+            if (!statement.conditions.isEmpty()) {
+                statement.conditions.forEach(condition -> {
+                    condition.leftLocal = code.newLocal(TypeId.get(condition.valueType));
+                    condition.leftEncodedLocal = code.newLocal(TypeId.get(condition.encodedValueType));
+                    condition.rightLocal = code.newLocal(TypeId.get(condition.valueType));
+                    condition.rightLocalHelper = code.newLocal(TypeId.STRING);
 
-                condition.doubleComparisonResult = code.newLocal(TypeId.INT);
-                condition.doubleComparisonAnchor = code.newLocal(TypeId.INT);
-            });
+                    condition.doubleComparisonResult = code.newLocal(TypeId.INT);
+                    condition.doubleComparisonAnchor = code.newLocal(TypeId.INT);
+                });
+            }
         });
     }
 
@@ -837,66 +841,70 @@ public class AndroidWeightingHelperCreator {
     ) {
         TypeId<EdgeIteratorState> edgeTypeId = TypeId.get(EdgeIteratorState.class);
 
+        if (statements.isEmpty()) return;
         statements.forEach(statement -> {
             code.loadConstant(statement.operationValue, statement.value);
-            statement.conditions.forEach(condition -> {
 
-                code.iget(
-                        (FieldId<CustomWeightingHelper, ?>) condition.localVariable.fieldId,
-                        condition.leftEncodedLocal,
-                        thisRef
-                );
+            if (!statement.conditions.isEmpty()) {
+                statement.conditions.forEach(condition -> {
 
-                Label trueLabel = new Label();
-                code.compare(Comparison.EQ, trueLabel, reverse, trueBoolean);
-
-                MethodId<EdgeIteratorState, ?> edgeGetReverseMethod = edgeTypeId.getMethod(
-                        TypeId.get(condition.valueType),
-                        "getReverse",
-                        TypeId.get(condition.encodedValueType));
-
-                code.invokeDirect(
-                        edgeGetReverseMethod,
-                        condition.leftLocal,
-                        edge,
-                        condition.leftEncodedLocal
-                );
-
-                code.mark(trueLabel);
-                MethodId<EdgeIteratorState, ?> edgeGetMethod = edgeTypeId.getMethod(
-                        TypeId.get(condition.valueType),
-                        "get",
-                        TypeId.get(condition.encodedValueType)
-                );
-                code.invokeDirect(
-                        edgeGetMethod,
-                        condition.leftLocal,
-                        edge,
-                        condition.leftEncodedLocal
-                );
-
-                if (condition.valueType.isEnum()) {
-                    String valueOfMethodName = "valueOf";
-                    TypeId<? extends Enum<?>> enumType = TypeId.get(condition.valueType);
-                    MethodId<? extends Enum<?>, ? extends Enum<?>> valueOfMethod = enumType.getMethod(
-                            enumType,
-                            valueOfMethodName,
-                            TypeId.STRING
+                    code.iget(
+                            (FieldId<CustomWeightingHelper, ?>) condition.localVariable.fieldId,
+                            condition.leftEncodedLocal,
+                            thisRef
                     );
-                    code.loadConstant(condition.rightLocalHelper, (String) condition.value);
-                    code.invokeStatic(valueOfMethod, condition.rightLocal, condition.rightLocalHelper);
-                } else if (condition.valueType == Double.TYPE) {
-                    code.loadConstant(condition.rightLocal, (double) condition.value);
-                } else if (condition.valueType == Integer.TYPE) {
-                    code.loadConstant(condition.rightLocal, (int) condition.value);
-                } else if (condition.valueType == Boolean.TYPE) {
-                    code.loadConstant(condition.rightLocal, (boolean) condition.value);
-                } else if (!condition.valueType.isPrimitive()) {
-                    code.loadConstant(condition.rightLocal, condition.valueType.cast(condition.value));
-                } else {
-                    code.loadConstant(condition.rightLocal, condition.value);
-                }
-            });
+
+                    Label trueLabel = new Label();
+                    code.compare(Comparison.EQ, trueLabel, reverse, trueBoolean);
+
+                    MethodId<EdgeIteratorState, ?> edgeGetReverseMethod = edgeTypeId.getMethod(
+                            TypeId.get(condition.valueType),
+                            "getReverse",
+                            TypeId.get(condition.encodedValueType));
+
+                    code.invokeDirect(
+                            edgeGetReverseMethod,
+                            condition.leftLocal,
+                            edge,
+                            condition.leftEncodedLocal
+                    );
+
+                    code.mark(trueLabel);
+                    MethodId<EdgeIteratorState, ?> edgeGetMethod = edgeTypeId.getMethod(
+                            TypeId.get(condition.valueType),
+                            "get",
+                            TypeId.get(condition.encodedValueType)
+                    );
+                    code.invokeDirect(
+                            edgeGetMethod,
+                            condition.leftLocal,
+                            edge,
+                            condition.leftEncodedLocal
+                    );
+
+                    if (condition.valueType.isEnum()) {
+                        String valueOfMethodName = "valueOf";
+                        TypeId<? extends Enum<?>> enumType = TypeId.get(condition.valueType);
+                        MethodId<? extends Enum<?>, ? extends Enum<?>> valueOfMethod = enumType.getMethod(
+                                enumType,
+                                valueOfMethodName,
+                                TypeId.STRING
+                        );
+                        code.loadConstant(condition.rightLocalHelper, (String) condition.value);
+                        code.invokeStatic(valueOfMethod, condition.rightLocal, condition.rightLocalHelper);
+                    } else if (condition.valueType == Double.TYPE) {
+                        code.loadConstant(condition.rightLocal, (double) condition.value);
+                    } else if (condition.valueType == Integer.TYPE) {
+                        code.loadConstant(condition.rightLocal, (int) condition.value);
+                    } else if (condition.valueType == Boolean.TYPE) {
+                        code.loadConstant(condition.rightLocal, (boolean) condition.value);
+                    } else if (!condition.valueType.isPrimitive()) {
+                        code.loadConstant(condition.rightLocal, condition.valueType.cast(condition.value));
+                    } else {
+                        code.loadConstant(condition.rightLocal, condition.value);
+                    }
+                });
+            }
         });
     }
 
