@@ -816,7 +816,7 @@ public class AndroidWeightingHelperCreator {
 
         statements.forEach(statement -> {
             statement.operationValue = code.newLocal(TypeId.DOUBLE);
-            if (!statement.conditions.isEmpty()) {
+            if (statement.conditions != null && !statement.conditions.isEmpty()) {
                 statement.conditions.forEach(condition -> {
                     condition.leftLocal = code.newLocal(TypeId.get(condition.valueType));
                     condition.leftEncodedLocal = code.newLocal(TypeId.get(condition.encodedValueType));
@@ -845,7 +845,7 @@ public class AndroidWeightingHelperCreator {
         statements.forEach(statement -> {
             code.loadConstant(statement.operationValue, statement.value);
 
-            if (!statement.conditions.isEmpty()) {
+            if (statement.conditions != null && !statement.conditions.isEmpty()) {
                 statement.conditions.forEach(condition -> {
 
                     code.iget(
