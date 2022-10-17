@@ -501,6 +501,16 @@ public class AndroidWeightingHelperCreator {
             // Save conditions separately to the list.
             List<String> conditionsStrings = new ArrayList<>();
 
+            if (
+                    statement.getCondition() == null ||
+                            statement.getCondition().trim().equals("") ||
+                            statement.getCondition().trim().equals("null")
+            ) {
+                localStatement.expressions = new ArrayList<>();
+                localStatements.add(localStatement);
+                continue;
+            }
+
             String statementCondition = statement.getCondition().replaceAll(" ", "");
 
             for (String orStatements : statementCondition
