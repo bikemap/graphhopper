@@ -610,16 +610,6 @@ public class AndroidWeightingHelperCreator {
             return;
         }
 
-        // Try parsing the value as double
-        try {
-            condition.value = Double.parseDouble(value);
-            // The value is double
-            condition.valueType = Double.TYPE;
-            return;
-        } catch (NumberFormatException exception) {
-            // The value is not double
-        }
-
         // Try parsing the value as integer
         try {
             condition.value = Integer.parseInt(value);
@@ -628,6 +618,16 @@ public class AndroidWeightingHelperCreator {
             return;
         } catch (NumberFormatException exception) {
             // The value is not integer
+        }
+
+        // Try parsing the value as double
+        try {
+            condition.value = Double.parseDouble(value);
+            // The value is double
+            condition.valueType = Double.TYPE;
+            return;
+        } catch (NumberFormatException exception) {
+            // The value is not double
         }
 
         // Try parsing the value as possible enums
