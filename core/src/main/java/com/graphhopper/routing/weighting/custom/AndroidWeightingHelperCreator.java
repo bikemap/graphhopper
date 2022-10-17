@@ -56,10 +56,10 @@ public class AndroidWeightingHelperCreator {
 
     @SuppressWarnings("SameParameterValue")
     private static <T, G extends T> void generateConstructorsAndFields(
-        DexMaker dexMaker,
-        TypeId<G> generatedType,
-        TypeId<T> superType,
-        Class<T> superClass
+            DexMaker dexMaker,
+            TypeId<G> generatedType,
+            TypeId<T> superType,
+            Class<T> superClass
     ) {
         for (Constructor<T> constructor : getConstructorsToOverwrite(superClass)) {
             if (constructor.getModifiers() == Modifier.FINAL) {
@@ -80,10 +80,10 @@ public class AndroidWeightingHelperCreator {
     }
 
     private static List<LocalVariable> generateLocalVariables(
-        DexMaker dexMaker,
-        TypeId<? extends CustomWeightingHelper> generatedType,
-        EncodedValueLookup lookup,
-        CustomModel customModel
+            DexMaker dexMaker,
+            TypeId<? extends CustomWeightingHelper> generatedType,
+            EncodedValueLookup lookup,
+            CustomModel customModel
     ) {
         List<LocalVariable> variables = new ArrayList<>();
         ArrayList<Statement> statements = new ArrayList<>();
@@ -93,7 +93,7 @@ public class AndroidWeightingHelperCreator {
             if (lookup.hasEncodedValue(variable)) {
                 EncodedValue enc = lookup.getEncodedValue(variable, EncodedValue.class);
                 FieldId<? extends CustomWeightingHelper, ? extends EncodedValue> encLocal
-                    = generatedType.getField(TypeId.get(getInterface(enc)), variable + "_enc");
+                        = generatedType.getField(TypeId.get(getInterface(enc)), variable + "_enc");
                 dexMaker.declare(encLocal, Modifier.PROTECTED, null);
 
                 LocalVariable localVariable = new LocalVariable();
@@ -116,7 +116,7 @@ public class AndroidWeightingHelperCreator {
                     throw new IllegalArgumentException("Bounding box and properties of area " + id + " must be empty");
 
                 FieldId<? extends CustomWeightingHelper, Polygon> areaLocal
-                    = generatedType.getField(TypeId.get(Polygon.class), variable);
+                        = generatedType.getField(TypeId.get(Polygon.class), variable);
                 dexMaker.declare(areaLocal, Modifier.PROTECTED, null);
 
                 LocalVariable localVariable = new LocalVariable();
@@ -147,23 +147,23 @@ public class AndroidWeightingHelperCreator {
             Comparator[] comparators = Comparator.values();
 
             for (String orStatements : statement.getCondition()
-                .replaceAll("\\(|\\)", "")
-                .split("\\|\\|")
+                    .replaceAll("\\(|\\)", "")
+                    .split("\\|\\|")
             ) {
                 conditions.addAll(
-                    Arrays.stream(
-                        orStatements.split("&&"))
-                        .map(String::trim)
-                        .collect(Collectors.toList()
-                        )
+                        Arrays.stream(
+                                        orStatements.split("&&"))
+                                .map(String::trim)
+                                .collect(Collectors.toList()
+                                )
                 );
             }
 
             for (String condition : conditions) {
                 Comparator conditionComparator = Arrays.stream(comparators)
-                    .filter(comparator -> condition.contains(comparator.value))
-                    .findFirst()
-                    .orElse(null);
+                        .filter(comparator -> condition.contains(comparator.value))
+                        .findFirst()
+                        .orElse(null);
 
                 if (conditionComparator != null) {
                     variableNames.add(condition.split(conditionComparator.value)[0].trim());
@@ -223,21 +223,21 @@ public class AndroidWeightingHelperCreator {
      * </pre>
      */
     private static void generateInitMethod(
-        DexMaker dexMaker,
-        TypeId<? extends CustomWeightingHelper> generatedClassType,
-        TypeId<CustomWeightingHelper> baseClassType,
-        EncodedValueLookup lookup,
-        List<LocalVariable> localVariables
+            DexMaker dexMaker,
+            TypeId<? extends CustomWeightingHelper> generatedClassType,
+            TypeId<CustomWeightingHelper> baseClassType,
+            EncodedValueLookup lookup,
+            List<LocalVariable> localVariables
     ) {
         String methodName = "init";
 
         @SuppressWarnings("unchecked")
         MethodId<?, Void> method = generatedClassType.getMethod(
-            TypeId.VOID,
-            methodName,
-            TypeId.get(EncodedValueLookup.class),
-            TypeId.get(DecimalEncodedValue.class),
-            TypeId.get((Class<HashMap<String, JsonFeature>>)(Class<?>) HashMap.class)
+                TypeId.VOID,
+                methodName,
+                TypeId.get(EncodedValueLookup.class),
+                TypeId.get(DecimalEncodedValue.class),
+                TypeId.get((Class<HashMap<String, JsonFeature>>) (Class<?>) HashMap.class)
         );
         Code code = dexMaker.declare(method, Modifier.PUBLIC);
 
@@ -246,15 +246,15 @@ public class AndroidWeightingHelperCreator {
 
         @SuppressWarnings("unchecked")
         Local<HashMap<String, JsonFeature>> areasParam
-            = code.getParameter(2, TypeId.get((Class<HashMap<String, JsonFeature>>) (Class<?>) HashMap.class));
+                = code.getParameter(2, TypeId.get((Class<HashMap<String, JsonFeature>>) (Class<?>) HashMap.class));
 
         Local<? extends CustomWeightingHelper> thisRef = code.getThis(generatedClassType);
         FieldId<CustomWeightingHelper, DecimalEncodedValue> avgSpeedEnc
-            = baseClassType.getField(TypeId.get(DecimalEncodedValue.class), "avg_speed_enc");
+                = baseClassType.getField(TypeId.get(DecimalEncodedValue.class), "avg_speed_enc");
 
         TypeId<EncodedValueLookup> encodedValueLookupTypeId = TypeId.get(EncodedValueLookup.class);
         MethodId<EncodedValueLookup, Boolean> hasEncodedValueMethod
-            = encodedValueLookupTypeId.getMethod(TypeId.BOOLEAN, "hasEncodedValue", TypeId.STRING);
+                = encodedValueLookupTypeId.getMethod(TypeId.BOOLEAN, "hasEncodedValue", TypeId.STRING);
 
         @SuppressWarnings("unchecked")
         TypeId<HashMap<String, JsonFeature>> areasTypeId = TypeId.get((Class<HashMap<String, JsonFeature>>) (Class<?>) HashMap.class);
@@ -323,37 +323,37 @@ public class AndroidWeightingHelperCreator {
             Label conditionLabel = new Label();
 
             code.invokeDirect(
-                hasEncodedValueMethod,
-                container.hasEncodedValueResult,
-                lookupRef,
-                container.lookupParam
+                    hasEncodedValueMethod,
+                    container.hasEncodedValueResult,
+                    lookupRef,
+                    container.lookupParam
             );
 
             code.compare(Comparison.NE, conditionLabel, container.hasEncodedValueResult, trueResult);
 
             MethodId<EncodedValueLookup, ? extends EncodedValue> getEncodedValueMethod
-                = encodedValueLookupTypeId.getMethod(
-                TypeId.get(getInterface(container.encodedValue)),
-                "getEncodedValue",
-                TypeId.STRING,
-                TypeId.get(Class.class)
+                    = encodedValueLookupTypeId.getMethod(
+                    TypeId.get(getInterface(container.encodedValue)),
+                    "getEncodedValue",
+                    TypeId.STRING,
+                    TypeId.get(Class.class)
             );
 
             code.invokeDirect(
-                getEncodedValueMethod,
-                container.getEncodedValueResult,
-                lookupRef,
-                container.encodedValueParam,
-                classParam
+                    getEncodedValueMethod,
+                    container.getEncodedValueResult,
+                    lookupRef,
+                    container.encodedValueParam,
+                    classParam
             );
 
             code.cast(container.getEncodedValueCastedResult, container.getEncodedValueResult);
 
             //noinspection unchecked
             code.iput(
-                (FieldId<CustomWeightingHelper, EncodedValue>) container.fieldId,
-                thisRef,
-                container.getEncodedValueCastedResult
+                    (FieldId<CustomWeightingHelper, EncodedValue>) container.fieldId,
+                    thisRef,
+                    container.getEncodedValueCastedResult
             );
 
             code.mark(conditionLabel);
@@ -361,50 +361,50 @@ public class AndroidWeightingHelperCreator {
 
         areaVariableContainers.forEach((container) -> {
             MethodId<HashMap<String, JsonFeature>, JsonFeature> getJsonFeature
-                = areasTypeId.getMethod(
-                TypeId.get(JsonFeature.class),
-                "get",
-                TypeId.STRING
+                    = areasTypeId.getMethod(
+                    TypeId.get(JsonFeature.class),
+                    "get",
+                    TypeId.STRING
             );
 
             code.loadConstant(container.jsonFeatureParam, container.name);
 
             code.invokeDirect(
-                getJsonFeature,
-                container.jsonFeature,
-                areasParam,
-                container.jsonFeatureParam
+                    getJsonFeature,
+                    container.jsonFeature,
+                    areasParam,
+                    container.jsonFeatureParam
             );
 
             MethodId<JsonFeature, Geometry> getGeometry
-                = jsonFeatureTypeId.getMethod(
-                TypeId.get(Geometry.class),
-                "getGeometry"
+                    = jsonFeatureTypeId.getMethod(
+                    TypeId.get(Geometry.class),
+                    "getGeometry"
             );
 
             code.invokeDirect(
-                getGeometry,
-                container.geometry,
-                container.jsonFeature
+                    getGeometry,
+                    container.geometry,
+                    container.jsonFeature
             );
 
             code.cast(container.geometryCasted, container.geometry);
 
             MethodId<PreparedPolygon, Void> preparedPolygonConstructor
-                = preparedPolygonTypeId.getConstructor(TypeId.get(Polygonal.class));
+                    = preparedPolygonTypeId.getConstructor(TypeId.get(Polygonal.class));
 
             code.newInstance(container.preparedPolygon, preparedPolygonConstructor, container.geometryCasted);
 
             MethodId<Polygon, Void> polygonConstructor
-                = polygonTypeId.getConstructor(preparedPolygonTypeId);
+                    = polygonTypeId.getConstructor(preparedPolygonTypeId);
 
             code.newInstance(container.polygon, polygonConstructor, container.preparedPolygon);
 
             //noinspection unchecked
             code.iput(
-                (FieldId<CustomWeightingHelper, Polygon>) container.fieldId,
-                thisRef,
-                container.polygon
+                    (FieldId<CustomWeightingHelper, Polygon>) container.fieldId,
+                    thisRef,
+                    container.polygon
             );
         });
 
@@ -442,17 +442,17 @@ public class AndroidWeightingHelperCreator {
      * }
      */
     private static void generateGetPriorityMethod(
-        DexMaker dexMaker,
-        TypeId<? extends CustomWeightingHelper> generatedClassType,
-        List<LocalVariable> localVariables,
-        List<Statement> statements
+            DexMaker dexMaker,
+            TypeId<? extends CustomWeightingHelper> generatedClassType,
+            List<LocalVariable> localVariables,
+            List<Statement> statements
     ) {
         String methodName = "getPriority";
         MethodId<?, Double> method = generatedClassType.getMethod(
-            TypeId.DOUBLE,
-            methodName,
-            TypeId.get(EdgeIteratorState.class),
-            TypeId.BOOLEAN
+                TypeId.DOUBLE,
+                methodName,
+                TypeId.get(EdgeIteratorState.class),
+                TypeId.BOOLEAN
         );
         Code code = dexMaker.declare(method, Modifier.PUBLIC);
         Local<Double> result = code.newLocal(TypeId.DOUBLE);
@@ -471,8 +471,8 @@ public class AndroidWeightingHelperCreator {
     }
 
     private static List<LocalStatement> processStatements(
-        List<LocalVariable> localVariables,
-        List<Statement> statements
+            List<LocalVariable> localVariables,
+            List<Statement> statements
     ) {
         List<LocalStatement> localStatements = new ArrayList<>();
         for (Statement statement : statements) {
@@ -489,14 +489,14 @@ public class AndroidWeightingHelperCreator {
             String statementCondition = statement.getCondition().replaceAll(" ", "");
 
             for (String orStatements : statementCondition
-                .replaceAll("\\(|\\)", "")
-                .split("\\|\\|")
+                    .replaceAll("\\(|\\)", "")
+                    .split("\\|\\|")
             ) {
                 for (String c : Arrays.stream(
-                    orStatements.split("&&"))
-                    .map(String::trim)
-                    .collect(Collectors.toList()
-                    )) {
+                                orStatements.split("&&"))
+                        .map(String::trim)
+                        .collect(Collectors.toList()
+                        )) {
                     if (!conditionsStrings.contains(c)) {
                         conditionsStrings.add(c);
                     }
@@ -514,9 +514,9 @@ public class AndroidWeightingHelperCreator {
                 Condition condition = new Condition();
 
                 Comparator conditionComparator = Arrays.stream(comparators)
-                    .filter((comparator) -> conditionString.contains(comparator.value))
-                    .findFirst()
-                    .orElse(null);
+                        .filter((comparator) -> conditionString.contains(comparator.value))
+                        .findFirst()
+                        .orElse(null);
 
                 String localVariableName;
                 if (conditionComparator != null) {
@@ -524,7 +524,7 @@ public class AndroidWeightingHelperCreator {
                     setConditionValue(condition, conditionString.split(conditionComparator.value)[1].trim());
                     localVariableName = conditionString.split(conditionComparator.value)[0].trim();
                 } else {
-                    condition.valueType = Boolean.class;
+                    condition.valueType = Boolean.TYPE;
                     String variableName = conditionString;
                     if (variableName.startsWith("!")) {
                         condition.value = false;
@@ -536,9 +536,9 @@ public class AndroidWeightingHelperCreator {
                 }
 
                 condition.localVariable = localVariables.stream()
-                    .filter((variable) -> variable.name.equals(localVariableName))
-                    .findFirst()
-                    .orElseThrow(NullPointerException::new);
+                        .filter((variable) -> variable.name.equals(localVariableName))
+                        .findFirst()
+                        .orElseThrow(NullPointerException::new);
 
                 return condition;
             }).collect(Collectors.toList());
@@ -549,8 +549,8 @@ public class AndroidWeightingHelperCreator {
             List<List<Integer>> expressions = new ArrayList<>();
             try {
                 statementCondition = statementCondition
-                    .replaceAll("\\|\\|", "|")
-                    .replaceAll("&&", "&");
+                        .replaceAll("\\|\\|", "|")
+                        .replaceAll("&&", "&");
 
                 String simplifiedExpression;
                 if (
@@ -573,9 +573,9 @@ public class AndroidWeightingHelperCreator {
 
                 for (String orExpressions : simplifiedExpression.split("\\+")) {
                     expressions.add(
-                        Arrays.stream(orExpressions.split("\\*"))
-                            .map(Integer::parseInt)
-                            .collect(Collectors.toList())
+                            Arrays.stream(orExpressions.split("\\*"))
+                                    .map(Integer::parseInt)
+                                    .collect(Collectors.toList())
                     );
                 }
             } catch (BExprPreParseException e) {
@@ -614,7 +614,7 @@ public class AndroidWeightingHelperCreator {
         try {
             condition.value = Double.parseDouble(value);
             // The value is double
-            condition.valueType = double.class;
+            condition.valueType = Double.TYPE;
             return;
         } catch (NumberFormatException exception) {
             // The value is not double
@@ -624,7 +624,7 @@ public class AndroidWeightingHelperCreator {
         try {
             condition.value = Integer.parseInt(value);
             // The value is integer
-            condition.valueType = Integer.class;
+            condition.valueType = Integer.TYPE;
             return;
         } catch (NumberFormatException exception) {
             // The value is not integer
@@ -632,7 +632,7 @@ public class AndroidWeightingHelperCreator {
 
         // Try parsing the value as possible enums
         Class[] possibleClasses = new Class[]{
-            RoadClass.class, RoadEnvironment.class, RoadAccess.class, RouteNetwork.class, Surface.class, Toll.class
+                RoadClass.class, RoadEnvironment.class, RoadAccess.class, RouteNetwork.class, Surface.class, Toll.class
         };
 
         for (Class possibleClass : possibleClasses) {
@@ -648,9 +648,9 @@ public class AndroidWeightingHelperCreator {
     }
 
     private static <T extends Enum<T>> boolean setConditionEnumValue(
-        Class<T> clazz,
-        Condition condition,
-        String value
+            Class<T> clazz,
+            Condition condition,
+            String value
     ) {
         try {
             T.valueOf(clazz, value);
@@ -677,7 +677,7 @@ public class AndroidWeightingHelperCreator {
         List<List<Integer>> expressions;
 
         Label label = new Label();
-     }
+    }
 
     @SuppressWarnings("rawtypes")
     private static class Condition<T> {
@@ -735,18 +735,18 @@ public class AndroidWeightingHelperCreator {
      * }
      */
     private static void generateGetSpeedMethod(
-        DexMaker dexMaker,
-        TypeId<? extends CustomWeightingHelper> generatedClassType,
-        TypeId<CustomWeightingHelper> baseClassType,
-        List<LocalVariable> localVariables,
-        List<Statement> statements,
-        double globalMaxSpeed
+            DexMaker dexMaker,
+            TypeId<? extends CustomWeightingHelper> generatedClassType,
+            TypeId<CustomWeightingHelper> baseClassType,
+            List<LocalVariable> localVariables,
+            List<Statement> statements,
+            double globalMaxSpeed
     ) {
         String methodName = "getSpeed";
         MethodId<?, Double> method = generatedClassType.getMethod(TypeId.DOUBLE,
-            methodName,
-            TypeId.get(EdgeIteratorState.class),
-            TypeId.BOOLEAN);
+                methodName,
+                TypeId.get(EdgeIteratorState.class),
+                TypeId.BOOLEAN);
         Code code = dexMaker.declare(method, Modifier.PUBLIC);
         Local<EdgeIteratorState> getSpeedEdge = code.getParameter(0, TypeId.get(EdgeIteratorState.class));
         Local<Boolean> getSpeedReverse = code.getParameter(1, TypeId.BOOLEAN);
@@ -759,7 +759,7 @@ public class AndroidWeightingHelperCreator {
 
         String getRawSpeedMethodName = "getRawSpeed";
         MethodId<CustomWeightingHelper, Double> getRawSpeedMethod
-            = baseClassType.getMethod(TypeId.DOUBLE, getRawSpeedMethodName, TypeId.get(EdgeIteratorState.class), TypeId.BOOLEAN);
+                = baseClassType.getMethod(TypeId.DOUBLE, getRawSpeedMethodName, TypeId.get(EdgeIteratorState.class), TypeId.BOOLEAN);
         Local<? extends CustomWeightingHelper> thisRef = code.getThis(generatedClassType);
         code.invokeSuper(getRawSpeedMethod, result, thisRef, getSpeedEdge, getSpeedReverse);
 
@@ -794,32 +794,40 @@ public class AndroidWeightingHelperCreator {
 
     @SuppressWarnings("unchecked")
     private static void updateLocalVariables(
-        Code code,
-        List<LocalStatement> statements,
-        Local<CustomWeightingHelper> thisRef
+            Code code,
+            List<LocalStatement> statements,
+            Local<CustomWeightingHelper> thisRef
     ) {
         statements.forEach(statement -> {
-           code.loadConstant(statement.operationValue, statement.value);
-           statement.conditions.forEach(condition -> {
-               code.iget(
-                   (FieldId<CustomWeightingHelper, ?>)condition.localVariable.fieldId,
-                   condition.leftLocal,
-                   thisRef
-               );
-               if (condition.valueType.isEnum()) {
-                   String valueOfMethodName = "valueOf";
-                   TypeId<? extends Enum<?>> enumType = TypeId.get(condition.valueType);
-                   MethodId<? extends Enum<?>, ? extends Enum<?>> valueOfMethod = enumType.getMethod(
-                       enumType,
-                       valueOfMethodName,
-                       TypeId.STRING
-                   );
-                   code.loadConstant(condition.rightLocalHelper, (String) condition.value);
-                   code.invokeStatic(valueOfMethod, condition.rightLocal, condition.rightLocalHelper);
-               } else {
-                   code.loadConstant(condition.rightLocal, condition.valueType.cast(condition.value));
-               }
-           });
+            code.loadConstant(statement.operationValue, statement.value);
+            statement.conditions.forEach(condition -> {
+                code.iget(
+                        (FieldId<CustomWeightingHelper, ?>) condition.localVariable.fieldId,
+                        condition.leftLocal,
+                        thisRef
+                );
+                if (condition.valueType.isEnum()) {
+                    String valueOfMethodName = "valueOf";
+                    TypeId<? extends Enum<?>> enumType = TypeId.get(condition.valueType);
+                    MethodId<? extends Enum<?>, ? extends Enum<?>> valueOfMethod = enumType.getMethod(
+                            enumType,
+                            valueOfMethodName,
+                            TypeId.STRING
+                    );
+                    code.loadConstant(condition.rightLocalHelper, (String) condition.value);
+                    code.invokeStatic(valueOfMethod, condition.rightLocal, condition.rightLocalHelper);
+                } else if (condition.valueType == Double.TYPE) {
+                    code.loadConstant(condition.rightLocal, (double) condition.value);
+                } else if (condition.valueType == Integer.TYPE) {
+                    code.loadConstant(condition.rightLocal, (int) condition.value);
+                } else if (condition.valueType == Boolean.TYPE) {
+                    code.loadConstant(condition.rightLocal, (boolean) condition.value);
+                } else if (!condition.valueType.isPrimitive()) {
+                    code.loadConstant(condition.rightLocal, condition.valueType.cast(condition.value));
+                } else {
+                    code.loadConstant(condition.rightLocal, condition.value);
+                }
+            });
         });
     }
 
@@ -862,7 +870,7 @@ public class AndroidWeightingHelperCreator {
                             falseLabel = orLabels.get(i + 1);
                         }
 
-                        if (condition.valueType == double.class) {
+                        if (condition.valueType == Double.TYPE) {
                             code.compareFloatingPoint(
                                     condition.doubleComparisonResult,
                                     condition.leftLocal,
@@ -928,9 +936,9 @@ public class AndroidWeightingHelperCreator {
     }
 
     private static LocalStatement getNextStatement(
-        List<LocalStatement> statements,
-        Statement.Keyword keyword,
-        int currentIndex
+            List<LocalStatement> statements,
+            Statement.Keyword keyword,
+            int currentIndex
     ) {
         if (currentIndex >= statements.size() - 1) {
             return null;
