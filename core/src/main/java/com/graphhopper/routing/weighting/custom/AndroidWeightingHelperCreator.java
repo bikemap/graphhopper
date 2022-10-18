@@ -858,20 +858,6 @@ public class AndroidWeightingHelperCreator {
                     Label falseLabel = new Label();
                     code.compare(Comparison.EQ, trueLabel, reverse, trueBoolean);
 
-                    MethodId<EdgeIteratorState, ?> edgeGetReverseMethod = edgeTypeId.getMethod(
-                            TypeId.get(condition.valueType),
-                            "getReverse",
-                            TypeId.get(condition.encodedValueType));
-
-                    code.invokeDirect(
-                            edgeGetReverseMethod,
-                            condition.leftLocal,
-                            edge,
-                            condition.leftEncodedLocal
-                    );
-                    code.jump(falseLabel);
-
-                    code.mark(trueLabel);
                     MethodId<EdgeIteratorState, ?> edgeGetMethod = edgeTypeId.getMethod(
                             TypeId.get(condition.valueType),
                             "get",
@@ -879,6 +865,22 @@ public class AndroidWeightingHelperCreator {
                     );
                     code.invokeDirect(
                             edgeGetMethod,
+                            condition.leftLocal,
+                            edge,
+                            condition.leftEncodedLocal
+                    );
+
+                    code.jump(falseLabel);
+
+                    code.mark(trueLabel);
+
+                    MethodId<EdgeIteratorState, ?> edgeGetReverseMethod = edgeTypeId.getMethod(
+                            TypeId.get(condition.valueType),
+                            "getReverse",
+                            TypeId.get(condition.encodedValueType));
+
+                    code.invokeDirect(
+                            edgeGetReverseMethod,
                             condition.leftLocal,
                             edge,
                             condition.leftEncodedLocal
