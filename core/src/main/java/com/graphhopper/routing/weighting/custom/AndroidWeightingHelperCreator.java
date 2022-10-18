@@ -855,16 +855,16 @@ public class AndroidWeightingHelperCreator {
                     );
 
                     TypeId<?> leftLocalReturnTypeId;
-                    if (condition.valueType.isEnum()) {
-                        leftLocalReturnTypeId = TypeId.get(Enum.class);
-                    } else if (condition.valueType == Double.TYPE) {
+                    if (condition.encodedValueType == DecimalEncodedValue.class) {
                         leftLocalReturnTypeId = TypeId.DOUBLE;
-                    } else if (condition.valueType == Integer.TYPE) {
+                    } else if (condition.encodedValueType == IntEncodedValue.class) {
                         leftLocalReturnTypeId = TypeId.INT;
-                    } else if (condition.valueType == Boolean.TYPE) {
+                    } else if (condition.encodedValueType == StringEncodedValue.class) {
+                        leftLocalReturnTypeId = TypeId.STRING;
+                    } else if (condition.encodedValueType == BooleanEncodedValue.class) {
                         leftLocalReturnTypeId = TypeId.BOOLEAN;
-                    } else if (!condition.valueType.isPrimitive()) {
-                        leftLocalReturnTypeId = TypeId.OBJECT;
+                    } else if (condition.encodedValueType == EnumEncodedValue.class) {
+                        leftLocalReturnTypeId = TypeId.get(Enum.class);
                     } else {
                         leftLocalReturnTypeId = TypeId.get(condition.valueType);
                     }
