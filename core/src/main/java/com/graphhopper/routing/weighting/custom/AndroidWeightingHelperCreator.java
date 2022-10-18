@@ -274,6 +274,8 @@ public class AndroidWeightingHelperCreator {
         TypeId<Polygon> polygonTypeId = TypeId.get(Polygon.class);
 
         Local<Boolean> trueResult = code.newLocal(TypeId.BOOLEAN);
+        @SuppressWarnings("rawtypes")
+        Local<Class> classParam = code.newLocal(TypeId.get(Class.class));
 
         List<EncodedValueVariableContainer> encodedValueVariableContainers = new ArrayList<>();
         List<AreaVariableContainer> areaVariableContainers = new ArrayList<>();
@@ -295,7 +297,6 @@ public class AndroidWeightingHelperCreator {
                 container.getEncodedValueCastedResult = code.newLocal(TypeId.get(getInterface(container.encodedValue)));
 
                 container.encodedValueParam = code.newLocal(TypeId.STRING);
-                container.classParam = code.newLocal(TypeId.get(Class.class));
 
                 encodedValueVariableContainers.add(container);
             } else {
@@ -320,6 +321,8 @@ public class AndroidWeightingHelperCreator {
         // Instructions
 
         code.loadConstant(trueResult, true);
+        code.loadDeferredClassConstant(classParam, TypeId.get(EncodedValue.class));
+
         code.iput(avgSpeedEnc, thisRef, avgSpeedEncParam);
 
         encodedValueVariableContainers.forEach((container) -> {
@@ -345,14 +348,12 @@ public class AndroidWeightingHelperCreator {
                     TypeId.get(Class.class)
             );
 
-            code.loadDeferredClassConstant(container.classParam, TypeId.get(getInterface(container.encodedValue)));
-
             code.invokeInterface(
                     getEncodedValueMethod,
                     container.getEncodedValueResult,
                     lookupRef,
                     container.encodedValueParam,
-                    container.classParam
+                    classParam
             );
 
             code.cast(container.getEncodedValueCastedResult, container.getEncodedValueResult);
@@ -429,7 +430,6 @@ public class AndroidWeightingHelperCreator {
         Local<EncodedValue> getEncodedValueResult;
         Local<? extends EncodedValue> getEncodedValueCastedResult;
         Local<String> encodedValueParam;
-        Local<Class> classParam;
     }
 
     private static class AreaVariableContainer {
