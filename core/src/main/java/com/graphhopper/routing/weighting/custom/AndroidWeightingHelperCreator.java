@@ -331,7 +331,7 @@ public class AndroidWeightingHelperCreator {
 
             Label conditionLabel = new Label();
 
-            code.invokeDirect(
+            code.invokeInterface(
                     hasEncodedValueMethod,
                     container.hasEncodedValueResult,
                     lookupRef,
@@ -348,7 +348,7 @@ public class AndroidWeightingHelperCreator {
                     TypeId.get(Class.class)
             );
 
-            code.invokeDirect(
+            code.invokeInterface(
                     getEncodedValueMethod,
                     container.getEncodedValueResult,
                     lookupRef,
