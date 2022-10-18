@@ -854,12 +854,27 @@ public class AndroidWeightingHelperCreator {
                             thisRef
                     );
 
+                    TypeId<?> leftLocalReturnTypeId;
+                    if (condition.valueType.isEnum()) {
+                        leftLocalReturnTypeId = TypeId.get(Enum.class);
+                    } else if (condition.valueType == Double.TYPE) {
+                        leftLocalReturnTypeId = TypeId.DOUBLE;
+                    } else if (condition.valueType == Integer.TYPE) {
+                        leftLocalReturnTypeId = TypeId.INT;
+                    } else if (condition.valueType == Boolean.TYPE) {
+                        leftLocalReturnTypeId = TypeId.BOOLEAN;
+                    } else if (!condition.valueType.isPrimitive()) {
+                        leftLocalReturnTypeId = TypeId.OBJECT;
+                    } else {
+                        leftLocalReturnTypeId = TypeId.get(condition.valueType);
+                    }
+
                     Label trueLabel = new Label();
                     Label falseLabel = new Label();
                     code.compare(Comparison.EQ, trueLabel, reverse, trueBoolean);
 
                     MethodId<EdgeIteratorState, ?> edgeGetMethod = edgeTypeId.getMethod(
-                            TypeId.get(condition.valueType),
+                            leftLocalReturnTypeId,
                             "get",
                             TypeId.get(condition.encodedValueType)
                     );
@@ -875,7 +890,7 @@ public class AndroidWeightingHelperCreator {
                     code.mark(trueLabel);
 
                     MethodId<EdgeIteratorState, ?> edgeGetReverseMethod = edgeTypeId.getMethod(
-                            TypeId.get(condition.valueType),
+                            leftLocalReturnTypeId,
                             "getReverse",
                             TypeId.get(condition.encodedValueType));
 
