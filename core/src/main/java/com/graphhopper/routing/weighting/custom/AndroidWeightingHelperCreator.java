@@ -340,9 +340,9 @@ public class AndroidWeightingHelperCreator {
 
             code.compare(Comparison.NE, conditionLabel, container.hasEncodedValueResult, trueResult);
 
-            MethodId<EncodedValueLookup, ? extends EncodedValue> getEncodedValueMethod
+            MethodId<EncodedValueLookup, EncodedValue> getEncodedValueMethod
                     = encodedValueLookupTypeId.getMethod(
-                    TypeId.get(getInterface(container.encodedValue)),
+                    TypeId.get(EncodedValue.class),
                     "getEncodedValue",
                     TypeId.STRING,
                     TypeId.get(Class.class)
