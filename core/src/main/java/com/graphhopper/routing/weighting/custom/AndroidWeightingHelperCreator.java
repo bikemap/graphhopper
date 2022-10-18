@@ -460,12 +460,12 @@ public class AndroidWeightingHelperCreator {
         MethodId<?, Double> method = generatedClassType.getMethod(
                 TypeId.DOUBLE,
                 methodName,
-                TypeId.get((Class<? extends EdgeIteratorState>) EdgeIteratorState.class),
+                TypeId.get(EdgeIteratorState.class),
                 TypeId.BOOLEAN
         );
         Code code = dexMaker.declare(method, Modifier.PUBLIC);
 
-        Local<? extends EdgeIteratorState> getPriorityEdge = code.getParameter(0, TypeId.get((Class<? extends EdgeIteratorState>) EdgeIteratorState.class));
+        Local<EdgeIteratorState> getPriorityEdge = code.getParameter(0, TypeId.get(EdgeIteratorState.class));
         Local<Boolean> getPriorityReverse = code.getParameter(1, TypeId.BOOLEAN);
         Local<Boolean> trueBoolean = code.newLocal(TypeId.BOOLEAN);
 
@@ -780,7 +780,7 @@ public class AndroidWeightingHelperCreator {
                 TypeId.get(EdgeIteratorState.class),
                 TypeId.BOOLEAN);
         Code code = dexMaker.declare(method, Modifier.PUBLIC);
-        Local<? extends EdgeIteratorState> getSpeedEdge = code.getParameter(0, TypeId.get((Class<? extends EdgeIteratorState>) EdgeIteratorState.class));
+        Local<EdgeIteratorState> getSpeedEdge = code.getParameter(0, TypeId.get(EdgeIteratorState.class));
         Local<Boolean> getSpeedReverse = code.getParameter(1, TypeId.BOOLEAN);
         Local<Boolean> trueBoolean = code.newLocal(TypeId.BOOLEAN);
 
@@ -792,7 +792,7 @@ public class AndroidWeightingHelperCreator {
 
         String getRawSpeedMethodName = "getRawSpeed";
         MethodId<CustomWeightingHelper, Double> getRawSpeedMethod
-                = baseClassType.getMethod(TypeId.DOUBLE, getRawSpeedMethodName, TypeId.get((Class<? extends EdgeIteratorState>) EdgeIteratorState.class), TypeId.BOOLEAN);
+                = baseClassType.getMethod(TypeId.DOUBLE, getRawSpeedMethodName, TypeId.get(EdgeIteratorState.class), TypeId.BOOLEAN);
         Local<? extends CustomWeightingHelper> thisRef = code.getThis(generatedClassType);
         code.invokeSuper(getRawSpeedMethod, result, thisRef, getSpeedEdge, getSpeedReverse);
 
@@ -835,11 +835,11 @@ public class AndroidWeightingHelperCreator {
             Code code,
             List<LocalStatement> statements,
             Local<CustomWeightingHelper> thisRef,
-            Local<? extends EdgeIteratorState> edge,
+            Local<EdgeIteratorState> edge,
             Local<Boolean> reverse,
             Local<Boolean> trueBoolean
     ) {
-        TypeId<? extends EdgeIteratorState> edgeTypeId = TypeId.get((Class<? extends EdgeIteratorState>) EdgeIteratorState.class);
+        TypeId<EdgeIteratorState> edgeTypeId = TypeId.get(EdgeIteratorState.class);
 
         if (statements.isEmpty()) return;
         statements.forEach(statement -> {
@@ -863,7 +863,7 @@ public class AndroidWeightingHelperCreator {
                             "get",
                             TypeId.get(condition.encodedValueType)
                     );
-                    code.invokeDirect(
+                    code.invokeInterface(
                             edgeGetMethod,
                             condition.leftLocal,
                             edge,
@@ -879,7 +879,7 @@ public class AndroidWeightingHelperCreator {
                             "getReverse",
                             TypeId.get(condition.encodedValueType));
 
-                    code.invokeDirect(
+                    code.invokeInterface(
                             edgeGetReverseMethod,
                             condition.leftLocal,
                             edge,
