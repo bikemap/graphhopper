@@ -247,7 +247,7 @@ public class AndroidWeightingHelperCreator {
                 methodName,
                 TypeId.get(EncodedValueLookup.class),
                 TypeId.get(DecimalEncodedValue.class),
-                TypeId.get((Class<HashMap<String, JsonFeature>>) (Class<?>) HashMap.class)
+                TypeId.get((Class<Map<String, JsonFeature>>) (Class<?>) Map.class)
         );
         Code code = dexMaker.declare(method, Modifier.PUBLIC);
 
@@ -255,8 +255,8 @@ public class AndroidWeightingHelperCreator {
         Local<DecimalEncodedValue> avgSpeedEncParam = code.getParameter(1, TypeId.get(DecimalEncodedValue.class));
 
         @SuppressWarnings("unchecked")
-        Local<HashMap<String, JsonFeature>> areasParam
-                = code.getParameter(2, TypeId.get((Class<HashMap<String, JsonFeature>>) (Class<?>) HashMap.class));
+        Local<Map<String, JsonFeature>> areasParam
+                = code.getParameter(2, TypeId.get((Class<Map<String, JsonFeature>>) (Class<?>) Map.class));
 
         Local<? extends CustomWeightingHelper> thisRef = code.getThis(generatedClassType);
         FieldId<CustomWeightingHelper, DecimalEncodedValue> avgSpeedEnc
@@ -267,7 +267,7 @@ public class AndroidWeightingHelperCreator {
                 = encodedValueLookupTypeId.getMethod(TypeId.BOOLEAN, "hasEncodedValue", TypeId.STRING);
 
         @SuppressWarnings("unchecked")
-        TypeId<HashMap<String, JsonFeature>> areasTypeId = TypeId.get((Class<HashMap<String, JsonFeature>>) (Class<?>) HashMap.class);
+        TypeId<Map<String, JsonFeature>> areasTypeId = TypeId.get((Class<Map<String, JsonFeature>>) (Class<?>) Map.class);
 
         TypeId<JsonFeature> jsonFeatureTypeId = TypeId.get(JsonFeature.class);
         TypeId<PreparedPolygon> preparedPolygonTypeId = TypeId.get(PreparedPolygon.class);
@@ -368,7 +368,7 @@ public class AndroidWeightingHelperCreator {
         });
 
         areaVariableContainers.forEach((container) -> {
-            MethodId<HashMap<String, JsonFeature>, JsonFeature> getJsonFeature
+            MethodId<Map<String, JsonFeature>, JsonFeature> getJsonFeature
                     = areasTypeId.getMethod(
                     TypeId.get(JsonFeature.class),
                     "get",
@@ -377,7 +377,7 @@ public class AndroidWeightingHelperCreator {
 
             code.loadConstant(container.jsonFeatureParam, container.name);
 
-            code.invokeDirect(
+            code.invokeInterface(
                     getJsonFeature,
                     container.jsonFeature,
                     areasParam,
