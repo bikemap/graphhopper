@@ -855,6 +855,7 @@ public class AndroidWeightingHelperCreator {
                     );
 
                     Label trueLabel = new Label();
+                    Label falseLabel = new Label();
                     code.compare(Comparison.EQ, trueLabel, reverse, trueBoolean);
 
                     MethodId<EdgeIteratorState, ?> edgeGetReverseMethod = edgeTypeId.getMethod(
@@ -868,6 +869,7 @@ public class AndroidWeightingHelperCreator {
                             edge,
                             condition.leftEncodedLocal
                     );
+                    code.jump(falseLabel);
 
                     code.mark(trueLabel);
                     MethodId<EdgeIteratorState, ?> edgeGetMethod = edgeTypeId.getMethod(
@@ -881,6 +883,8 @@ public class AndroidWeightingHelperCreator {
                             edge,
                             condition.leftEncodedLocal
                     );
+
+                    code.mark(falseLabel);
 
                     if (condition.valueType.isEnum()) {
                         String valueOfMethodName = "valueOf";
