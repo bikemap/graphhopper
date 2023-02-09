@@ -493,7 +493,7 @@ public class AndroidWeightingHelperCreator {
         for (Statement statement : statements) {
 
             LocalStatement localStatement = new LocalStatement();
-            localStatement.value = statement.getValue();
+            localStatement.value = Double.parseDouble(statement.getValue());
             localStatement.keyword = statement.getKeyword();
             localStatement.operation = statement.getOperation();
 
