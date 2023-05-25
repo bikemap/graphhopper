@@ -87,6 +87,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             return AverageSlope.create();
         } else if (Curvature.KEY.equals(name)) {
             return Curvature.create();
+        } else if (BMWeight.KEY.equals(name)) {
+            return BMWeight.create();
         } else
             throw new IllegalArgumentException("DefaultEncodedValueFactory cannot find EncodedValue " + name);
     }
