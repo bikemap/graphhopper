@@ -22,6 +22,6 @@ public class BMWeight {
     public static final String KEY = "bm-weight";
 
     public static IntEncodedValue create() {
-        return new IntEncodedValueImpl(KEY, 3, false);
+        return new IntEncodedValueImpl(KEY, 31, false);
     }
 }
