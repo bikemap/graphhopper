@@ -20,6 +20,8 @@ package com.graphhopper.routing.util.parsers;
 import com.graphhopper.routing.ev.*;
 import com.graphhopper.util.PMap;
 
+import java.util.List;
+
 import static com.graphhopper.util.Helper.toLowerCase;
 
 public class DefaultTagParserFactory implements TagParserFactory {
@@ -28,6 +30,8 @@ public class DefaultTagParserFactory implements TagParserFactory {
         name = name.trim();
         if (!name.equals(toLowerCase(name)))
             throw new IllegalArgumentException("Use lower case for TagParsers: " + name);
+
+        List<String> replicatedTags = BMWeight.replicatedTags();
 
         // for Country (SpatialRuleParser) see SpatialRuleLookupHelper
         if (Roundabout.KEY.equals(name))
@@ -64,6 +68,8 @@ public class DefaultTagParserFactory implements TagParserFactory {
             return new OSMHazmatTunnelParser();
         else if (name.equals(HazmatWater.KEY))
             return new OSMHazmatWaterParser();
+        else if (replicatedTags.contains(name))
+            return new BMWeightParser(name);
         else if (name.equals(Country.KEY))
             throw new IllegalArgumentException("The property spatial_rules.borders_directory is required in the configuration " +
                     "when using 'country' in encoded_values");

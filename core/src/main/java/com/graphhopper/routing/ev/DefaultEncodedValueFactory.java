@@ -19,6 +19,8 @@ package com.graphhopper.routing.ev;
 
 import com.graphhopper.util.Helper;
 
+import java.util.List;
+
 public class DefaultEncodedValueFactory implements EncodedValueFactory {
     @Override
     public EncodedValue create(String string) {
@@ -29,6 +31,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
         String name = string.split("\\|")[0];
         if (name.isEmpty())
             throw new IllegalArgumentException("To load EncodedValue a name is required. " + string);
+
+        List<String> replicatedTags = BMWeight.replicatedTags();
 
         // creating the Country EV is done while SpatialRuleIndex is created and not here
         if (Roundabout.KEY.equals(name)) {
@@ -69,6 +73,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             enc = new EnumEncodedValue<>(HazmatTunnel.KEY, HazmatTunnel.class);
         } else if (HazmatWater.KEY.equals(name)) {
             enc = new EnumEncodedValue<>(HazmatWater.KEY, HazmatWater.class);
+        } else if (replicatedTags.contains(name)) {
+            enc = BMWeight.create(name);
         } else {
             throw new IllegalArgumentException("DefaultEncodedValueFactory cannot find EncodedValue " + name);
         }
