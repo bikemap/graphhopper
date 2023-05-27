@@ -349,7 +349,10 @@ public class EncodingManager implements EncodedValueLookup {
             if (c == '_') {
                 if (underscoreCount > 0) return false;
                 underscoreCount++;
-            } else if (!isLowerLetter(c) && !isNumber(c)) {
+            } else if (c == '-'){
+                if (underscoreCount > 0) return false;
+                underscoreCount++;
+            }else if (!isLowerLetter(c) && !isNumber(c)) {
                 return false;
             } else {
                 underscoreCount = 0;

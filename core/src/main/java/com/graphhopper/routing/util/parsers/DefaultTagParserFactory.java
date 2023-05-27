@@ -77,6 +77,22 @@ public class DefaultTagParserFactory implements TagParserFactory {
             return new OSMHorseRatingParser(lookup.getIntEncodedValue(HorseRating.KEY));
         else if (name.equals(Country.KEY))
             return new CountryParser(lookup.getEnumEncodedValue(Country.KEY, Country.class));
+        else if (name.equals(BMWeight.KEY))
+            return new BMWeightParser(lookup.getIntEncodedValue(BMWeight.KEY));
+        else if (name.equals(BMWeightTracked.KEY))
+            return new BMWeightTrackedParser(lookup.getIntEncodedValue(BMWeightTracked.KEY));
+        else if (name.equals(BMWeightAtoB.KEY))
+            return new BMWeightAtoBParser(lookup.getIntEncodedValue(BMWeightAtoB.KEY));
+        else if (name.equals(BMWeightAtoBTracked.KEY))
+            return new BMWeightAtoBTrackedParser(lookup.getIntEncodedValue(BMWeightAtoBTracked.KEY));
+        else if (name.equals(BMWeightMountainBike.KEY))
+            return new BMWeightMountainBikeParser(lookup.getIntEncodedValue(BMWeightMountainBike.KEY));
+        else if (name.equals(BMWeightMountainBikeTracked.KEY))
+            return new BMWeightMountainBikeTrackedParser(lookup.getIntEncodedValue(BMWeightMountainBikeTracked.KEY));
+        else if (name.equals(BMWeightRoadBike.KEY))
+            return new BMWeightRoadBikeParser(lookup.getIntEncodedValue(BMWeightRoadBike.KEY));
+        else if (name.equals(BMWeightRoadBikeTracked.KEY))
+            return new BMWeightRoadBikeTrackedParser(lookup.getIntEncodedValue(BMWeightRoadBikeTracked.KEY));
         return null;
     }
 }

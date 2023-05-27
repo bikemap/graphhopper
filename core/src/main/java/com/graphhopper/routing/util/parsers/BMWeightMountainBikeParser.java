@@ -1,0 +1,24 @@
+package com.graphhopper.routing.util.parsers;
+
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.ev.IntEncodedValue;
+import com.graphhopper.routing.util.parsers.helpers.OSMValueExtractor;
+import com.graphhopper.storage.IntsRef;
+
+import java.util.Arrays;
+import java.util.List;
+
+public class BMWeightMountainBikeParser implements TagParser {
+
+    private final IntEncodedValue BMWeightMountainBikeEnc;
+
+    public BMWeightMountainBikeParser(IntEncodedValue BMWeightMountainBikeEnc) {
+
+        this.BMWeightMountainBikeEnc = BMWeightMountainBikeEnc;
+    }
+
+    @Override
+    public IntsRef handleWayTags(IntsRef edgeFlags, ReaderWay way, IntsRef relationFlags) {
+        return edgeFlags;
+    }
+}
