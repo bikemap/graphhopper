@@ -18,7 +18,7 @@ public class BMWeightParser implements TagParser {
 
     @Override
     public IntsRef handleWayTags(IntsRef edgeFlags, ReaderWay way, IntsRef relationFlags) {
-        int bmweight = readerWay.getTag("bm-weight");
+        int bmweight = way.getTag("bm-weight");
         BMWeightEnc.setInt(false, edgeFlags, bmweight);
         return edgeFlags;
     }
