@@ -26,7 +26,6 @@ public class DefaultTagParserFactory implements TagParserFactory {
     @Override
     public TagParser create(EncodedValueLookup lookup, String name) {
         name = name.trim();
-        System.out.println("#################" + name);
         if (!name.equals(toLowerCase(name)))
             throw new IllegalArgumentException("Use lower case for TagParsers: " + name);
 
