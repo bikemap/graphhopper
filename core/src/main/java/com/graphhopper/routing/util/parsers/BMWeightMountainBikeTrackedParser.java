@@ -8,7 +8,7 @@ public class BMWeightMountainBikeTrackedParser implements TagParser {
 
     private final IntEncodedValue BMWeightMountainBikeTrackedEnc;
 
-    public BMWeightMountainBikeTrackedParser(IntEncodedValue BMWeightEnc) {
+    public BMWeightMountainBikeTrackedParser(IntEncodedValue BMWeightMountainBikeTrackedEnc) {
         this.BMWeightMountainBikeTrackedEnc = BMWeightMountainBikeTrackedEnc;
     }
 
