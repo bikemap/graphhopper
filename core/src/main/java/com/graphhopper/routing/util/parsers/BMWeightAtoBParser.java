@@ -4,21 +4,21 @@ import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.ev.IntEncodedValue;
 import com.graphhopper.storage.IntsRef;
 
-public class BMWeightParser implements TagParser {
+public class BMWeightAtoBParser implements TagParser {
 
-    private final IntEncodedValue BMWeightEnc;
+    private final IntEncodedValue BMWeightAtoBEnc;
 
-    public BMWeightParser(IntEncodedValue BMWeightEnc) {
-        this.BMWeightEnc = BMWeightEnc;
+    public BMWeightAtoBParser(IntEncodedValue BMWeightAtoBEnc) {
+        this.BMWeightAtoBEnc = BMWeightAtoBEnc;
     }
 
     @Override
     public IntsRef handleWayTags(IntsRef edgeFlags, ReaderWay way, IntsRef relationFlags) {
-        String bmWeight = way.getTag("bm-weight");
+        String bmWeight = way.getTag("bm-weight-a-to-b");
         if (bmWeight != null) {
             double bmWeightDec = Double.parseDouble(bmWeight);
             int bmWeightNum = (int) Math.round(bmWeightDec);
-            BMWeightEnc.setInt(false, edgeFlags, bmWeightNum);
+            BMWeightAtoBEnc.setInt(false, edgeFlags, bmWeightNum);
             return edgeFlags;
         }
         return edgeFlags;

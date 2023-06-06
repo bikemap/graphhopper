@@ -19,7 +19,7 @@
 package com.graphhopper.routing.ev;
 
 public class BMWeightTracked {
-    public static final String KEY = "bm-weight-tracked";
+    public static final String KEY = "bm_weight_tracked";
 
     public static IntEncodedValue create() {
         return new IntEncodedValueImpl(KEY, 31, false);
