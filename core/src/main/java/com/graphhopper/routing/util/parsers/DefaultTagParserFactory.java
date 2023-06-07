@@ -20,6 +20,8 @@ package com.graphhopper.routing.util.parsers;
 import com.graphhopper.routing.ev.*;
 import com.graphhopper.routing.util.TransportationMode;
 
+import java.util.List;
+
 import static com.graphhopper.util.Helper.toLowerCase;
 
 public class DefaultTagParserFactory implements TagParserFactory {
@@ -28,6 +30,8 @@ public class DefaultTagParserFactory implements TagParserFactory {
         name = name.trim();
         if (!name.equals(toLowerCase(name)))
             throw new IllegalArgumentException("Use lower case for TagParsers: " + name);
+
+        List<String> replicatedTags = BMWeight.replicatedTags();
 
         if (Roundabout.KEY.equals(name))
             return new OSMRoundaboutParser(lookup.getBooleanEncodedValue(Roundabout.KEY));
@@ -77,6 +81,8 @@ public class DefaultTagParserFactory implements TagParserFactory {
             return new OSMHorseRatingParser(lookup.getIntEncodedValue(HorseRating.KEY));
         else if (name.equals(Country.KEY))
             return new CountryParser(lookup.getEnumEncodedValue(Country.KEY, Country.class));
+        else if (replicatedTags.contains(name))
+            return new BMWeightParser(lookup.getIntEncodedValue(name));
         return null;
     }
 }
