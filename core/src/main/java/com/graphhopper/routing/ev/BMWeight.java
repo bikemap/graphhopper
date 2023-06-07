@@ -19,9 +19,27 @@
 package com.graphhopper.routing.ev;
 
 public class BMWeight {
-    public static final String KEY = "bm_weight";
+    private static final String environmentTags = System.getenv("REPLICATED_OSM_TAGS");
 
-    public static IntEncodedValue create() {
-        return new IntEncodedValueImpl(KEY, 31, false);
+    public static List<String> replicatedTags() {
+
+        if (environmentTags == null) {
+            return Arrays.asList(
+                    "bm_weight",
+                    "bm_weight_tracked",
+                    "bm_weight_a_to_b_tracked",
+                    "bm_weight_mountain_bike",
+                    "bm_weight_road_bike",
+                    "bm_weight_road_bike_tracked",
+                    "bm_weight_mountain_bike_tracked",
+                    "bm_weight_a_to_b"
+            );
+        };
+
+        return Arrays.asList(environmentTags.replaceAll("-", "_").split(","));
+    }
+
+    public static IntEncodedValue create(String key) {
+        return new IntEncodedValueImpl(key, 31, false);
     }
 }
