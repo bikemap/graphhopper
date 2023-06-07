@@ -30,6 +30,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
         if (name.isEmpty())
             throw new IllegalArgumentException("To load EncodedValue a name is required. " + string);
 
+        List<String> replicationTags = BMWeight.replicatedTags();
+
         if (Roundabout.KEY.equals(name)) {
             enc = Roundabout.create();
         } else if (GetOffBike.KEY.equals(name)) {
@@ -88,22 +90,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             enc = MaxSlope.create();
         } else if (AverageSlope.KEY.equals(name)) {
             enc = AverageSlope.create();
-        } else if (BMWeight.KEY.equals(name)) {
+        } else if (replicatedTags.contains(name)) {
             enc = BMWeight.create();
-        } else if (BMWeightTracked.KEY.equals(name)) {
-            enc = BMWeightTracked.create();
-        } else if (BMWeightAtoB.KEY.equals(name)) {
-            enc = BMWeightAtoB.create();
-        } else if (BMWeightAtoBTracked.KEY.equals(name)) {
-            enc = BMWeightAtoBTracked.create();
-        } else if (BMWeightMountainBike.KEY.equals(name)) {
-            enc = BMWeightMountainBike.create();
-        } else if (BMWeightMountainBikeTracked.KEY.equals(name)) {
-            enc = BMWeightMountainBikeTracked.create();
-        } else if (BMWeightRoadBike.KEY.equals(name)) {
-            enc = BMWeightRoadBike.create();
-        } else if (BMWeightRoadBikeTracked.KEY.equals(name)) {
-            enc = BMWeightRoadBikeTracked.create();
         } else {
             throw new IllegalArgumentException("DefaultEncodedValueFactory cannot find EncodedValue " + name);
         }
