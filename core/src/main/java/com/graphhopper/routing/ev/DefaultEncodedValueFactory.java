@@ -19,6 +19,8 @@ package com.graphhopper.routing.ev;
 
 import com.graphhopper.util.Helper;
 
+import java.util.List;
+
 public class DefaultEncodedValueFactory implements EncodedValueFactory {
     @Override
     public EncodedValue create(String string) {
@@ -30,7 +32,7 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
         if (name.isEmpty())
             throw new IllegalArgumentException("To load EncodedValue a name is required. " + string);
 
-        List<String> replicationTags = BMWeight.replicatedTags();
+        List<String> replicatedTags = BMWeight.replicatedTags();
 
         if (Roundabout.KEY.equals(name)) {
             enc = Roundabout.create();
@@ -91,7 +93,7 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
         } else if (AverageSlope.KEY.equals(name)) {
             enc = AverageSlope.create();
         } else if (replicatedTags.contains(name)) {
-            enc = BMWeight.create();
+            enc = BMWeight.create(name);
         } else {
             throw new IllegalArgumentException("DefaultEncodedValueFactory cannot find EncodedValue " + name);
         }
