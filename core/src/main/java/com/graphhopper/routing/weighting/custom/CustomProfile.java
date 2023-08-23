@@ -37,7 +37,6 @@ public class CustomProfile extends Profile {
     public CustomProfile setCustomModel(CustomModel customModel) {
         customModel.internal();
         getHints().putObject("custom_model_file", "empty");
-        getHints().putObject(CustomModel.KEY, customModel);
         return this;
     }
 
