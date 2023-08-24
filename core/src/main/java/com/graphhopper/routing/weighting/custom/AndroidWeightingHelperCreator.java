@@ -721,7 +721,7 @@ public class AndroidWeightingHelperCreator {
 
         // Expressions list represents an "or" list of groups of "and expressions"
         // For example: (A && B && C) || (D && E && F)
-        // The integer number is a position of the condition from onditions
+        // The integer number is a position of the condition from conditions
         List<List<Integer>> expressions;
 
         Label label = new Label();
