@@ -98,7 +98,7 @@ public class CustomModelParser {
             clazz = CACHE.get(key);
         if (clazz == null) {
             if (GraphHopper.isAndroid()) {
-                clazz = AndroidWeightingHelperCreator.createClazz(customModel, lookup, globalMaxSpeed);
+                clazz = AndroidWeightingHelperCreator.createClazz(customModel, lookup, globalMaxSpeed, globalMaxPriority);
             } else {
                 clazz = createClazz(customModel, lookup, globalMaxSpeed, globalMaxPriority);
             }
