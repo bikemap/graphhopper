@@ -1227,7 +1227,7 @@ public class GraphHopper {
     }
 
     private void setLMProfileVersion(String profile, int version) {
-        properties.put("graph.profiles.lm." + profile + ".version", n);
+        properties.put("graph.profiles.lm." + profile + ".version", version);
     }
 
     protected void loadOrPrepareCH(boolean closeEarly) {
