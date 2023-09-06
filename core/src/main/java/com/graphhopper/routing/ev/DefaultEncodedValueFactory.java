@@ -73,6 +73,10 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             enc = new EnumEncodedValue<>(HazmatTunnel.KEY, HazmatTunnel.class);
         } else if (HazmatWater.KEY.equals(name)) {
             enc = new EnumEncodedValue<>(HazmatWater.KEY, HazmatWater.class);
+        } else if (MaxSlope.KEY.equals(name)) {
+            enc = MaxSlope.create();
+        } else if (AverageSlope.KEY.equals(name)) {
+            enc = AverageSlope.create();
         } else if (replicatedTags.contains(name)) {
             enc = BMWeight.create(name);
         } else {
