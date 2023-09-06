@@ -70,6 +70,10 @@ public class DefaultTagParserFactory implements TagParserFactory {
             return new OSMHazmatWaterParser();
         else if (replicatedTags.contains(name))
             return new BMWeightParser(name);
+        else if (name.equals(AverageSlope.KEY))
+            return new SlopeCalculator(null, AverageSlope.create());
+        else if (name.equals(MaxSlope.KEY))
+            return new SlopeCalculator(MaxSlope.create(), null);
         else if (name.equals(Country.KEY))
             throw new IllegalArgumentException("The property spatial_rules.borders_directory is required in the configuration " +
                     "when using 'country' in encoded_values");

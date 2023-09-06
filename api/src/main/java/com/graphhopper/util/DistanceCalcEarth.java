@@ -40,6 +40,7 @@ public class DistanceCalcEarth implements DistanceCalc {
     public final static double C = 2 * PI * R;
     public final static double KM_MILE = 1.609344;
     public final static double METERS_PER_DEGREE = C / 360.0;
+    public static final DistanceCalcEarth DIST_EARTH = new DistanceCalcEarth();
 
     /**
      * Calculates distance of (from, to) in meter.
@@ -298,6 +299,35 @@ public class DistanceCalcEarth implements DistanceCalc {
         projectedLon = Math.toDegrees(projectedLon);
 
         return new GHPoint(projectedLat, projectedLon);
+    }
+
+    public double calcDistance(PointList pointList) {
+        return internCalcDistance(pointList, pointList.is3D());
+    }
+
+    public static double calcDistance(PointList pointList, boolean is3d) {
+        return DistanceCalcEarth.DIST_EARTH.internCalcDistance(pointList, is3d);
+    }
+
+    private double internCalcDistance(PointList pointList, boolean is3d) {
+        double prevLat = Double.NaN;
+        double prevLon = Double.NaN;
+        double prevEle = Double.NaN;
+        double dist = 0;
+        for (int i = 0; i < pointList.size(); i++) {
+            if (i > 0) {
+                if (is3d)
+                    dist += calcDist3D(prevLat, prevLon, prevEle, pointList.getLat(i), pointList.getLon(i), pointList.getEle(i));
+                else
+                    dist += calcDist(prevLat, prevLon, pointList.getLat(i), pointList.getLon(i));
+            }
+
+            prevLat = pointList.getLat(i);
+            prevLon = pointList.getLon(i);
+            if (pointList.is3D())
+                prevEle = pointList.getEle(i);
+        }
+        return dist;
     }
 
     @Override
