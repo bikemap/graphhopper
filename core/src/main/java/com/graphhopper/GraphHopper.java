@@ -49,6 +49,7 @@ import com.graphhopper.util.*;
 import com.graphhopper.util.Parameters.Landmark;
 import com.graphhopper.util.Parameters.Routing;
 import com.graphhopper.util.details.PathDetailsBuilderFactory;
+import net.bikemap.reader.dem.InhousedElevationProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -751,6 +752,11 @@ public class GraphHopper {
             elevationProvider = new MultiSourceElevationProvider(cacheDirStr);
         } else if (eleProviderStr.equalsIgnoreCase("skadi")) {
             elevationProvider = new SkadiProvider(cacheDirStr);
+        } else if (eleProviderStr.equalsIgnoreCase("inhoused")) {
+            String baseUrl = ghConfig.getString("graph.elevation.inhoused.base_url", "");
+            String datasetDir = ghConfig.getString("graph.elevation.inhoused.dataset_dir", "");
+            boolean interpolate = ghConfig.getBool("graph.elevation.inhoused.interpolate", true);
+            elevationProvider = new InhousedElevationProvider(baseUrl, datasetDir, cacheDirStr, interpolate);
         }
 
         if (elevationProvider instanceof TileBasedElevationProvider) {

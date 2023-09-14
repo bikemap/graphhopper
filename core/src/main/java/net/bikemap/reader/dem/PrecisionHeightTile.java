@@ -15,7 +15,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package com.graphhopper.reader.dem;
+package net.bikemap.reader.dem;
 
 import com.graphhopper.storage.DataAccess;
 
@@ -26,22 +26,22 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * A rectangle of elevation data following the Shuttle Radar Topography Mission (SRTM) structure,
- * which can be used for other data sources, provided that the bounds are integers.
+ * This is a copy of the com.graphhopper.reader.dem.HeightTile class, with support for decimal
+ * bounds.
  * <p>
  *
- * @author Peter Karich
+ * @author Marco Rodriguez
  */
-public class HeightTile {
+public class PrecisionHeightTile {
     /**
      * Latitude of the southernmost point of the tile.
      */
-    private final int minLat;
+    private final double minLat;
 
     /**
      * Longitude of the westernmost point of the tile.
      */
-    private final int minLon;
+    private final double minLon;
 
     /**
      * Width of the tile in cells/pixels.
@@ -56,12 +56,12 @@ public class HeightTile {
     /**
      * Width of the tile in degrees.
      */
-    private final int horizontalDegree;
+    private final double horizontalDegree;
 
     /**
      * Height of the tile in degrees.
      */
-    private final int verticalDegree;
+    private final double verticalDegree;
 
     /**
      * Lower bound of the tile in degrees, used to check whether a latitude/longitude delta is
@@ -90,24 +90,22 @@ public class HeightTile {
      */
     private boolean interpolate;
 
-    private final double MIN_ELEVATION_METERS = -12_000;
-    private final double MAX_ELEVATION_METERS = 9_000;
-
-    public HeightTile(int minLat, int minLon, int width, int height, double precision, int horizontalDegree, int verticalDegree) {
+    public PrecisionHeightTile(double minLat, double minLon, int width, int height, double precision, double horizontalDegree, double verticalDegree) {
         this.minLat = minLat;
         this.minLon = minLon;
+
         this.width = width;
         this.height = height;
 
-        this.lowerBound = -1 / precision; // -0.0000001
-        this.lonHigherBound = horizontalDegree + 1 / precision; // 1.0000001
-        this.latHigherBound = verticalDegree + 1 / precision; // 1.0000001
+        this.lowerBound = -1 / precision;
+        this.lonHigherBound = horizontalDegree + 1 / precision;
+        this.latHigherBound = verticalDegree + 1 / precision;
 
         this.horizontalDegree = horizontalDegree;
         this.verticalDegree = verticalDegree;
     }
 
-    public HeightTile setInterpolate(boolean interpolate) {
+    public PrecisionHeightTile setInterpolate(boolean interpolate) {
         this.interpolate = interpolate;
         return this;
     }
@@ -116,7 +114,7 @@ public class HeightTile {
         return heights.getHeader(0) == 1;
     }
 
-    public HeightTile setSeaLevel(boolean b) {
+    public PrecisionHeightTile setSeaLevel(boolean b) {
         heights.setHeader(0, b ? 1 : 0);
         return this;
     }
@@ -131,6 +129,9 @@ public class HeightTile {
     }
 
     private boolean isValidElevation(double elevation) {
+        double MIN_ELEVATION_METERS = -12_000;
+        double MAX_ELEVATION_METERS = 9_000;
+
         return elevation > MIN_ELEVATION_METERS && elevation < MAX_ELEVATION_METERS;
     }
 

@@ -57,13 +57,27 @@ public class SRTMProvider extends AbstractSRTMElevationProvider {
     public static void main(String[] args) throws IOException {
         SRTMProvider provider = new SRTMProvider();
         // 337
+        long startTime = System.nanoTime();
         System.out.println(provider.getEle(49.949784, 11.57517));
+        long endTime = System.nanoTime();
+        System.out.println("Time (ms):");
+        System.out.println((endTime - startTime) / 1e6);
+
         // 466
+        startTime = System.nanoTime();
         System.out.println(provider.getEle(49.968668, 11.575127));
+        endTime = System.nanoTime();
+        System.out.println("Time (ms):");
+        System.out.println((endTime - startTime) / 1e6);
+
         // 466
         System.out.println(provider.getEle(49.968682, 11.574842));
         // 3100
+        startTime = System.nanoTime();
         System.out.println(provider.getEle(-22.532854, -65.110474));
+        endTime = System.nanoTime();
+        System.out.println("Time (ms):");
+        System.out.println((endTime - startTime) / 1e6);
         // 122
         System.out.println(provider.getEle(38.065392, -87.099609));
         // 1617
