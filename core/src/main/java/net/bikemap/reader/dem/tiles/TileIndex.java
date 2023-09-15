@@ -9,6 +9,9 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * Class that keeps a spatial index from a set of tiles.
+ */
 public class TileIndex {
     /**
      * Initialize the JTS GeometryFactory.
@@ -30,6 +33,12 @@ public class TileIndex {
         this.tileIndex = buildRTreeIndex(tiles);
     }
 
+    /**
+     * Finds the intersecting tile given a coordinate.
+     * @param lat Latitude in decimal degrees.
+     * @param lon Longitude in decimal degrees.
+     * @return An intersecting tile, if any.
+     */
     public Optional<Tile> findIntersectingTile(double lat, double lon) {
         Coordinate coordinate = new Coordinate(lon, lat);
         Envelope envelope = new Envelope(coordinate);

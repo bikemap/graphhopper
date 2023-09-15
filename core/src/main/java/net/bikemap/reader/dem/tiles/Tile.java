@@ -2,7 +2,6 @@ package net.bikemap.reader.dem.tiles;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.locationtech.jts.geom.MultiPolygon;
-import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
 
 @JsonIgnoreProperties(ignoreUnknown = true)

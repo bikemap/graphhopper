@@ -2,7 +2,6 @@ package net.bikemap.reader.dem.tiles;
 
 import java.util.List;
 
-
 public class TileResponse {
     private List<Tile> tiles;
 

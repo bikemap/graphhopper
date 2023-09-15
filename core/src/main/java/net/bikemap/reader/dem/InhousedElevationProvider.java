@@ -20,7 +20,6 @@ import java.awt.image.BufferedImage;
 import java.awt.image.Raster;
 import java.io.File;
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -55,8 +54,7 @@ public class InhousedElevationProvider implements ElevationProvider {
 
     /**
      * Defines whether a linear interpolation should be performed when retrieving the elevation
-     * of a point. As Graphhopper internally casts the float32 rasters as 16-bit integers (short),
-     * interpolation might be advisable to the rounding inaccuracy.
+     * of a point.
      */
     private final boolean interpolate;
 
@@ -98,8 +96,10 @@ public class InhousedElevationProvider implements ElevationProvider {
             assertDatasetDirectoryIsComplete(datasetDir, tiles);
 
             this.tileIndex = new TileIndex(tiles);
-        } catch (URISyntaxException | MalformedURLException e) {
+        } catch (URISyntaxException e) {
             throw new IllegalArgumentException("invalid base url");
+        } catch (IOException e) {
+            throw new RuntimeException("could not connect to " + baseUrl + ": " + e);
         }
 
         logger.info(this.getClass().getName() + "to:" + cacheDir + ", as: " + STORAGE +
@@ -114,7 +114,7 @@ public class InhousedElevationProvider implements ElevationProvider {
         String datasetPath = new File(resourcesPath).getAbsolutePath();
 
         InhousedElevationProvider provider = new InhousedElevationProvider(
-                baseUrl, datasetPath, cachePath, true
+                baseUrl, datasetPath, cachePath, false
         );
 
         provider.compareResults(47.04638444368381,8.308393666039633,439.0);
@@ -151,6 +151,7 @@ public class InhousedElevationProvider implements ElevationProvider {
                 heightTile = loadHeightTile(tile);
             } catch (Exception ex) {
                 logger.error("could not load height tile: " + tile.getPath());
+                return 0;
             }
 
             tileCache.put(tile.getId(), heightTile);
@@ -184,7 +185,7 @@ public class InhousedElevationProvider implements ElevationProvider {
      * Asserts that all the files listed in the tiles response are available in the dataset
      * directory.
      */
-    private void assertDatasetDirectoryIsComplete(File datasetDir, List<Tile> tiles) {
+    private static void assertDatasetDirectoryIsComplete(File datasetDir, List<Tile> tiles) {
         for (Tile tile : tiles) {
             File tiffFile = new File(datasetDir, tile.getPath());
             if (!tiffFile.exists()) {
@@ -196,7 +197,7 @@ public class InhousedElevationProvider implements ElevationProvider {
     /**
      * Asserts that the cache directory exists (or that it can be created).
      */
-    private void assertCacheDirectoryIsValid(File cacheDir) {
+    private static void assertCacheDirectoryIsValid(File cacheDir) {
         if (cacheDir.exists() && !cacheDir.isDirectory()) {
             throw new IllegalArgumentException("Cache path has to be a directory");
         }
@@ -261,7 +262,7 @@ public class InhousedElevationProvider implements ElevationProvider {
      * @param tiffFile Non-compressed GeoTIFF file.
      * @return A java.awt.image.Raster instance.
      */
-    Raster readFile(File tiffFile) {
+    private static Raster readFile(File tiffFile) {
         // Load the raster using the ImageIO package, as the TIFFImageDecoder class from
         // org.apache.xmlgraphics used in other elevation providers doesn't support float32 tiffs.
         try (ImageInputStream input = ImageIO.createImageInputStream(tiffFile)) {
@@ -284,7 +285,7 @@ public class InhousedElevationProvider implements ElevationProvider {
      * @param raster Source raster.
      * @param heights Destination data access object (.gh file)
      */
-    private void fillDataAccessWithElevationData(Raster raster, DataAccess heights) {
+    private static void fillDataAccessWithElevationData(Raster raster, DataAccess heights) {
         int x = 0;
         int y = 0;
 
