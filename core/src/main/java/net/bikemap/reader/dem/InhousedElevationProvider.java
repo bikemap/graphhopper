@@ -150,7 +150,7 @@ public class InhousedElevationProvider implements ElevationProvider {
             try {
                 heightTile = loadHeightTile(tile);
             } catch (Exception ex) {
-                logger.error("could not load height tile: " + tile.getPath());
+                logger.error("could not load height tile: " + tile.getPath(), " - " + ex.getMessage());
                 return 0;
             }
 
@@ -227,9 +227,14 @@ public class InhousedElevationProvider implements ElevationProvider {
         );
         heightTile.setInterpolate(interpolate);
 
-        // Create .gh file, which is used by Graphhopper to store elevation rasters with 16 bit
+        // Create .gh file, which is used by Graphhopper to store elevation rasters with 16-bit
         // integer precision (short).
         String heightsPath = tile.getPath().toLowerCase() + ".gh";
+        File parentDir = new File(this.cacheDir.getLocation(), heightsPath).getParentFile();
+        if (!parentDir.exists() && !parentDir.mkdirs()) {
+            throw new RuntimeException("could not create parent directory for the cache file: " + parentDir.getAbsolutePath());
+        }
+
         DataAccess heights = this.cacheDir.create(heightsPath);
         heightTile.setHeights(heights);
 

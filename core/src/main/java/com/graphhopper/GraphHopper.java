@@ -752,10 +752,13 @@ public class GraphHopper {
             elevationProvider = new MultiSourceElevationProvider(cacheDirStr);
         } else if (eleProviderStr.equalsIgnoreCase("skadi")) {
             elevationProvider = new SkadiProvider(cacheDirStr);
-        } else if (eleProviderStr.equalsIgnoreCase("inhoused")) {
-            String baseUrl = ghConfig.getString("graph.elevation.inhoused.base_url", "");
-            String datasetDir = ghConfig.getString("graph.elevation.inhoused.dataset_dir", "");
-            boolean interpolate = ghConfig.getBool("graph.elevation.inhoused.interpolate", true);
+        } else if (eleProviderStr.equalsIgnoreCase("in_housed")) {
+            String baseUrl = ghConfig.getString("graph.elevation.in_housed.base_url", "");
+            String datasetDir = ghConfig.getString("graph.elevation.in_housed.dataset_dir", "");
+            boolean interpolate = ghConfig.has("graph.elevation.interpolate")
+                    ? "bilinear".equals(ghConfig.getString("graph.elevation.interpolate", "none"))
+                    : ghConfig.getBool("graph.elevation.calc_mean", false);
+
             elevationProvider = new InhousedElevationProvider(baseUrl, datasetDir, cacheDirStr, interpolate);
         }
 
