@@ -26,70 +26,23 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * A rectangle of elevation data following the Shuttle Radar Topography Mission (SRTM) structure,
- * which can be used for other data sources, provided that the bounds are integers.
+ * One rectangle of height data from Shuttle Radar Topography Mission.
  * <p>
  *
  * @author Peter Karich
  */
 public class HeightTile {
-    /**
-     * Latitude of the southernmost point of the tile.
-     */
     private final int minLat;
-
-    /**
-     * Longitude of the westernmost point of the tile.
-     */
     private final int minLon;
-
-    /**
-     * Width of the tile in cells/pixels.
-     */
     private final int width;
-
-    /**
-     * Height of the tile in cells/pixels.
-     */
     private final int height;
-
-    /**
-     * Width of the tile in degrees.
-     */
     private final int horizontalDegree;
-
-    /**
-     * Height of the tile in degrees.
-     */
     private final int verticalDegree;
-
-    /**
-     * Lower bound of the tile in degrees, used to check whether a latitude/longitude delta is
-     * within the tile.
-     */
     private final double lowerBound;
-
-    /**
-     * Longitude delta of the easternmost point of the tile.
-     */
     private final double lonHigherBound;
-
-    /**
-     * Latitude delta of the northernmost point of the tile.
-     */
     private final double latHigherBound;
-
-    /**
-     * Access object to the elevation data.
-     */
     private DataAccess heights;
-
-    /**
-     * Defines whether a linear interpolation should be performed when retrieving the elevation
-     * of a point.
-     */
     private boolean interpolate;
-
     private final double MIN_ELEVATION_METERS = -12_000;
     private final double MAX_ELEVATION_METERS = 9_000;
 
@@ -99,9 +52,9 @@ public class HeightTile {
         this.width = width;
         this.height = height;
 
-        this.lowerBound = -1 / precision; // -0.0000001
-        this.lonHigherBound = horizontalDegree + 1 / precision; // 1.0000001
-        this.latHigherBound = verticalDegree + 1 / precision; // 1.0000001
+        this.lowerBound = -1 / precision;
+        this.lonHigherBound = horizontalDegree + 1 / precision;
+        this.latHigherBound = verticalDegree + 1 / precision;
 
         this.horizontalDegree = horizontalDegree;
         this.verticalDegree = verticalDegree;
