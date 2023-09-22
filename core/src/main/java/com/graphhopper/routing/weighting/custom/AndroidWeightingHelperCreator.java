@@ -19,7 +19,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -558,7 +557,7 @@ public class AndroidWeightingHelperCreator {
                 Condition condition = new Condition();
 
                 Comparator conditionComparator = Arrays.stream(comparators)
-                        .filter((comparator) -> conditionString.contains(comparator.value))
+                        .filter(comparator -> conditionString.matches(".*(\\b| )" + comparator.value + "(\\b| ).*"))
                         .findFirst()
                         .orElse(null);
 
