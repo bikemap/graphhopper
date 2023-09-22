@@ -179,11 +179,7 @@ public class AndroidWeightingHelperCreator {
 
             for (String condition : conditions) {
                 Comparator conditionComparator = Arrays.stream(comparators)
-                        .filter(comparator -> {
-                            Pattern pattern = Pattern.compile("\\b" + comparator.value + "\\b");
-                            Matcher matcher = pattern.matcher(condition);
-                            return matcher.find();
-                        })
+                        .filter(comparator -> condition.matches(".*(\\b| )" + comparator.value + "(\\b| ).*"))
                         .findFirst()
                         .orElse(null);
 
