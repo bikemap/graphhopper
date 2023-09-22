@@ -19,6 +19,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -178,7 +179,11 @@ public class AndroidWeightingHelperCreator {
 
             for (String condition : conditions) {
                 Comparator conditionComparator = Arrays.stream(comparators)
-                        .filter(comparator -> condition.contains(comparator.value))
+                        .filter(comparator -> {
+                            Pattern pattern = Pattern.compile("\\b" + comparator.value + "\\b");
+                            Matcher matcher = pattern.matcher(condition);
+                            return matcher.find();
+                        })
                         .findFirst()
                         .orElse(null);
 
