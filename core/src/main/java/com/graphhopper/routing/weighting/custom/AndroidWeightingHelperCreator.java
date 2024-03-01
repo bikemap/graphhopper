@@ -249,20 +249,24 @@ public class AndroidWeightingHelperCreator {
                 methodName,
                 TypeId.get(EncodedValueLookup.class),
                 TypeId.get(DecimalEncodedValue.class),
+                TypeId.get(DecimalEncodedValue.class),
                 TypeId.get((Class<Map<String, JsonFeature>>) (Class<?>) Map.class)
         );
         Code code = dexMaker.declare(method, Modifier.PUBLIC);
 
         Local<EncodedValueLookup> lookupRef = code.getParameter(0, TypeId.get(EncodedValueLookup.class));
         Local<DecimalEncodedValue> avgSpeedEncParam = code.getParameter(1, TypeId.get(DecimalEncodedValue.class));
+        Local<DecimalEncodedValue> priorityEncParam = code.getParameter(2, TypeId.get(DecimalEncodedValue.class));
 
         @SuppressWarnings("unchecked")
         Local<Map<String, JsonFeature>> areasParam
-                = code.getParameter(2, TypeId.get((Class<Map<String, JsonFeature>>) (Class<?>) Map.class));
+                = code.getParameter(3, TypeId.get((Class<Map<String, JsonFeature>>) (Class<?>) Map.class));
 
         Local<? extends CustomWeightingHelper> thisRef = code.getThis(generatedClassType);
         FieldId<CustomWeightingHelper, DecimalEncodedValue> avgSpeedEnc
                 = baseClassType.getField(TypeId.get(DecimalEncodedValue.class), "avg_speed_enc");
+        FieldId<CustomWeightingHelper, DecimalEncodedValue> priorityEnc
+                = baseClassType.getField(TypeId.get(DecimalEncodedValue.class), "priority_enc");
 
         TypeId<EncodedValueLookup> encodedValueLookupTypeId = TypeId.get(EncodedValueLookup.class);
         MethodId<EncodedValueLookup, Boolean> hasEncodedValueMethod
@@ -326,6 +330,7 @@ public class AndroidWeightingHelperCreator {
         code.loadDeferredClassConstant(classParam, TypeId.get(EncodedValue.class));
 
         code.iput(avgSpeedEnc, thisRef, avgSpeedEncParam);
+        code.iput(priorityEnc, thisRef, priorityEncParam);
 
         encodedValueVariableContainers.forEach((container) -> {
             code.loadConstant(container.lookupParam, container.name);
