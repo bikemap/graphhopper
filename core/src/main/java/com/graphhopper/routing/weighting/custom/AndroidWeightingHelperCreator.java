@@ -29,7 +29,12 @@ public class AndroidWeightingHelperCreator {
     private static final Set<String> allowedNames = new HashSet<>(Arrays.asList("edge", "Math"));
     private static final AtomicLong longVal = new AtomicLong(1);
 
-    public static Class<?> createClazz(CustomModel customModel, EncodedValueLookup lookup, double globalMaxSpeed) {
+    public static Class<?> createClazz(
+            CustomModel customModel,
+            EncodedValueLookup lookup,
+            double globalMaxSpeed,
+            double globalMaxPriority
+    ) {
         try {
             DexMaker dexMaker = new DexMaker();
 
@@ -42,10 +47,12 @@ public class AndroidWeightingHelperCreator {
             generateConstructorsAndFields(dexMaker, generatedClassType, baseClassType, CustomWeightingHelper.class);
             List<LocalVariable> localVariables = generateLocalVariables(dexMaker, generatedClassType, lookup, customModel);
             generateInitMethod(dexMaker, generatedClassType, baseClassType, lookup, localVariables);
-            generateGetPriorityMethod(dexMaker, generatedClassType, localVariables, customModel.getPriority());
-            generateGetSpeedMethod(
-                    dexMaker, generatedClassType, baseClassType, localVariables, customModel.getSpeed(), globalMaxSpeed
-            );
+            double maxPriority = Math.max(1.0, globalMaxPriority);
+            generateGetMaxPriorityMethod(dexMaker, generatedClassType, maxPriority);
+            generateGetPriorityMethod(dexMaker, generatedClassType, localVariables, customModel.getPriority(), maxPriority);
+            double maxSpeed = Math.max(1.0, globalMaxSpeed);
+            generateGetMaxSpeedMethod(dexMaker, generatedClassType, maxSpeed);
+            generateGetSpeedMethod(dexMaker, generatedClassType, baseClassType, localVariables, customModel.getSpeed(), maxSpeed);
 
             ClassLoader loader = dexMaker.generateAndLoad(CustomWeightingHelper.class.getClassLoader(), dexCache);
             return loader.loadClass(classname);
@@ -450,6 +457,23 @@ public class AndroidWeightingHelperCreator {
         Local<Polygonal> geometryCasted;
     }
 
+    private static void generateGetMaxPriorityMethod(
+        DexMaker dexMaker,
+        TypeId<? extends CustomWeightingHelper> generatedClassType,
+        double globalMaxPriority
+    ) {
+        String methodName = "getMaxPriority";
+        MethodId<?, Double> method = generatedClassType.getMethod(
+                TypeId.DOUBLE,
+                methodName
+        );
+
+        Code code = dexMaker.declare(method, Modifier.PROTECTED);
+        Local<Double> result = code.newLocal(TypeId.DOUBLE);
+        code.loadConstant(result, globalMaxPriority);
+        code.returnValue(result);
+    }
+
     /**
      * Generates a method that looks like this
      * <p>
@@ -461,7 +485,8 @@ public class AndroidWeightingHelperCreator {
             DexMaker dexMaker,
             TypeId<? extends CustomWeightingHelper> generatedClassType,
             List<LocalVariable> localVariables,
-            List<Statement> statements
+            List<Statement> statements,
+            double globalMaxPriority
     ) {
         String methodName = "getPriority";
         MethodId<?, Double> method = generatedClassType.getMethod(
@@ -476,6 +501,7 @@ public class AndroidWeightingHelperCreator {
         Local<Boolean> getPriorityReverse = code.getParameter(1, TypeId.BOOLEAN);
         Local<Boolean> trueBoolean = code.newLocal(TypeId.BOOLEAN);
 
+        Local<Double> globalMaxPriorityValue = code.newLocal(TypeId.DOUBLE);
         Local<Double> result = code.newLocal(TypeId.DOUBLE);
 
         List<LocalStatement> localStatements = processStatements(localVariables, statements);
@@ -488,6 +514,12 @@ public class AndroidWeightingHelperCreator {
         //noinspection unchecked
         updateLocalVariables(code, localStatements, (Local<CustomWeightingHelper>) thisRef, getPriorityEdge, getPriorityReverse, trueBoolean);
         generateConditions(code, localStatements, result);
+
+        code.loadConstant(globalMaxPriorityValue, globalMaxPriority);
+
+        MethodId<Math, Double> minMethod =
+                TypeId.get(Math.class).getMethod(TypeId.DOUBLE, "min", TypeId.DOUBLE, TypeId.DOUBLE);
+        code.invokeStatic(minMethod, result, result, globalMaxPriorityValue);
 
         code.returnValue(result);
     }
@@ -764,6 +796,23 @@ public class AndroidWeightingHelperCreator {
             }
             throw new IllegalArgumentException();
         }
+    }
+
+    private static void generateGetMaxSpeedMethod(
+            DexMaker dexMaker,
+            TypeId<? extends CustomWeightingHelper> generatedClassType,
+            double globalMaxSpeed
+    ) {
+        String methodName = "getMaxSpeed";
+        MethodId<?, Double> method = generatedClassType.getMethod(
+                TypeId.DOUBLE,
+                methodName
+        );
+
+        Code code = dexMaker.declare(method, Modifier.PROTECTED);
+        Local<Double> result = code.newLocal(TypeId.DOUBLE);
+        code.loadConstant(result, globalMaxSpeed);
+        code.returnValue(result);
     }
 
     /**
