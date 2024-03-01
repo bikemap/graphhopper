@@ -86,6 +86,7 @@ public class AndroidWeightingHelperCreator {
             EncodedValueLookup lookup,
             CustomModel customModel
     ) {
+        Map<String, JsonFeature> areas = CustomModel.getAreasAsMap(customModel.getAreas());
         List<LocalVariable> variables = new ArrayList<>();
         ArrayList<Statement> statements = new ArrayList<>();
         statements.addAll(customModel.getPriority());
@@ -103,18 +104,19 @@ public class AndroidWeightingHelperCreator {
                 localVariable.isArea = false;
                 variables.add(localVariable);
             } else if (variable.startsWith(IN_AREA_PREFIX)) {
-                String id = variable.substring(IN_AREA_PREFIX.length());
-                if (!EncodingManager.isValidEncodedValue(id))
+                if (!JsonFeature.isValidId(variable))
                     throw new IllegalArgumentException("Area has invalid name: " + variable);
-                JsonFeature feature = customModel.getAreas().get(id);
+
+                String areaId = variable.substring(IN_AREA_PREFIX.length());
+                JsonFeature feature = areas.get(areaId);
                 if (feature == null)
-                    throw new IllegalArgumentException("Area '" + id + "' wasn't found");
+                    throw new IllegalArgumentException("Area '" + areaId + "' wasn't found");
                 if (feature.getGeometry() == null)
-                    throw new IllegalArgumentException("Area '" + id + "' does not contain a geometry");
+                    throw new IllegalArgumentException("Area '" + areaId + "' does not contain a geometry");
                 if (!(feature.getGeometry() instanceof Polygonal))
                     throw new IllegalArgumentException("Currently only type=Polygon is supported for areas but was " + feature.getGeometry().getGeometryType());
                 if (feature.getProperties() != null && !feature.getProperties().isEmpty() || feature.getBBox() != null)
-                    throw new IllegalArgumentException("Bounding box and properties of area " + id + " must be empty");
+                    throw new IllegalArgumentException("Bounding box and properties of area " + areaId + " must be empty");
 
                 FieldId<? extends CustomWeightingHelper, Polygon> areaLocal
                         = generatedType.getField(TypeId.get(Polygon.class), variable);
@@ -493,7 +495,7 @@ public class AndroidWeightingHelperCreator {
         for (Statement statement : statements) {
 
             LocalStatement localStatement = new LocalStatement();
-            localStatement.value = statement.getValue();
+            localStatement.value = Double.parseDouble(statement.getValue());
             localStatement.keyword = statement.getKeyword();
             localStatement.operation = statement.getOperation();
 
