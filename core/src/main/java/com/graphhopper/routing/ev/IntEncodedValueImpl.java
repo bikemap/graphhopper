@@ -19,6 +19,8 @@ package com.graphhopper.routing.ev;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.graphhopper.GraphHopper;
+import com.graphhopper.util.AndroidSourceVersion;
 
 import javax.lang.model.SourceVersion;
 
@@ -233,8 +235,15 @@ public class IntEncodedValueImpl implements IntEncodedValue {
     }
 
     static boolean isValidEncodedValue(String name) {
+        boolean isKeyword;
+        if (GraphHopper.isAndroid()) {
+            isKeyword = AndroidSourceVersion.isKeyword(name);
+        } else {
+            isKeyword = SourceVersion.isKeyword(name);
+        }
+
         if (name.length() < 2 || name.startsWith("in_") || name.startsWith("backward_")
-                || !isLowerLetter(name.charAt(0)) || SourceVersion.isKeyword(name))
+                || !isLowerLetter(name.charAt(0)) || isKeyword)
             return false;
 
         int underscoreCount = 0;
