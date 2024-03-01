@@ -731,10 +731,10 @@ public class AndroidWeightingHelperCreator {
 
         EQUALS("=="),
         NOT_EQUALS("!="),
-        BIGGER(">"),
         BIGGER_OR_EQUALS(">="),
-        SMALLER("<"),
-        SMALLER_OR_EQUALS("<=");
+        SMALLER_OR_EQUALS("<="),
+        BIGGER(">"),
+        SMALLER("<");
 
         String value;
 
