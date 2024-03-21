@@ -70,7 +70,7 @@ public class NearestResource {
             double[] coordinates = hasElevation && elevation ? new double[]{snappedPoint.lon, snappedPoint.lat, snappedPoint.ele} : new double[]{snappedPoint.lon, snappedPoint.lat};
             return new Response(coordinates, calc.calcDist(point.lat, point.lon, snappedPoint.lat, snappedPoint.lon));
         } else {
-            throw new WebApplicationException("Nearest point cannot be found!");
+            throw new WebApplicationException("Nearest point cannot be found!", 422);  // Return HTTP-Status 422 Unprocessable Content
         }
     }
 
