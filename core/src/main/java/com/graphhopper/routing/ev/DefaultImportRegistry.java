@@ -55,6 +55,11 @@ public class DefaultImportRegistry implements ImportRegistry {
                     (lookup, props) -> new OSMRoadEnvironmentParser(
                             lookup.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class))
             );
+        else if (name.equals(BMWayType.KEY))
+            return ImportUnit.create(name, props -> BMWayType.create(),
+                    (lookup, props) -> new BMWayTypeParser(
+                            lookup.getEnumEncodedValue(BMWayType.KEY, BMWayType.class))
+            );
         else if (RoadAccess.KEY.equals(name))
             return ImportUnit.create(name, props -> RoadAccess.create(),
                     (lookup, props) -> new OSMRoadAccessParser(
@@ -111,6 +116,11 @@ public class DefaultImportRegistry implements ImportRegistry {
             return ImportUnit.create(name, props -> Surface.create(),
                     (lookup, props) -> new OSMSurfaceParser(
                             lookup.getEnumEncodedValue(Surface.KEY, Surface.class))
+            );
+        else if (name.equals(BMSurface.KEY))
+            return ImportUnit.create(name, props -> BMSurface.create(),
+                    (lookup, props) -> new BMSurfaceParser(
+                            lookup.getEnumEncodedValue(BMSurface.KEY, BMSurface.class))
             );
         else if (Smoothness.KEY.equals(name))
             return ImportUnit.create(name, props -> Smoothness.create(),
@@ -196,6 +206,11 @@ public class DefaultImportRegistry implements ImportRegistry {
             return ImportUnit.create(name, props -> FerrySpeed.create(),
                     (lookup, props) -> new FerrySpeedCalculator(
                             lookup.getDecimalEncodedValue(FerrySpeed.KEY)));
+        else if (name.equals(BMIsPleasant.KEY))
+            return ImportUnit.create(name, props -> BMIsPleasant.create(),
+                    (lookup, props) -> new BMIsPleasantParser(
+                            lookup.getBooleanEncodedValue(BMIsPleasant.KEY))
+            );
         else if (Curvature.KEY.equals(name))
             return ImportUnit.create(name, props -> Curvature.create(),
                     (lookup, props) -> new CurvatureCalculator(
