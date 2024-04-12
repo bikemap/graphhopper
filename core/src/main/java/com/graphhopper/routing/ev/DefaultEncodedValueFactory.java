@@ -37,6 +37,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             return RoadClassLink.create();
         } else if (RoadEnvironment.KEY.equals(name)) {
             return RoadEnvironment.create();
+        } else if (BMWayType.KEY.equals(name)) {
+            return BMWayType.create();
         } else if (RoadAccess.KEY.equals(name)) {
             return RoadAccess.create();
         } else if (MaxSpeed.KEY.equals(name)) {
@@ -59,6 +61,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             return Hgv.create();
         } else if (Surface.KEY.equals(name)) {
             return Surface.create();
+        } else if (BMSurface.KEY.equals(name)) {
+            return BMSurface.create();
         } else if (Smoothness.KEY.equals(name)) {
             return Smoothness.create();
         } else if (Toll.KEY.equals(name)) {
@@ -101,6 +105,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             return new EnumEncodedValue<>(Crossing.KEY, Crossing.class);
         } else if (FerrySpeed.KEY.equals(name)) {
             return FerrySpeed.create();
+        } else if (BMIsPleasant.KEY.equals(name)) {
+            return BMIsPleasant.create();
         } else if (replicatedTags.contains(name)) {
             return BMWeight.create(name);
         } else {
