@@ -48,10 +48,10 @@ public enum BMWayType {
         // Road Additions
         WAYTYPE_MAP.put("tertiary", ROAD);
         WAYTYPE_MAP.put("tertiary_link", ROAD);
-        WAYTYPE_MAP.put("unclassified", ROAD);
 
         // Quiet Road Additions
         WAYTYPE_MAP.put("residential", QUIET_ROAD);
+        WAYTYPE_MAP.put("unclassified", QUIET_ROAD);
 
         // Access Road Additions
         WAYTYPE_MAP.put("service", ACCESS_ROAD);
