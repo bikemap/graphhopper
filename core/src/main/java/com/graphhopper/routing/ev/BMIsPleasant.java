@@ -20,7 +20,7 @@ package com.graphhopper.routing.ev;
 public class BMIsPleasant {
     public static final String KEY = "bm_is_pleasant";
 
-    public static BooleanEncodedValue create() {
-        return new SimpleBooleanEncodedValue(KEY, false);
+    public static IntEncodedValue create() {
+        return new IntEncodedValueImpl(KEY, 31, false);
     }
 }

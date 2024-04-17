@@ -209,7 +209,7 @@ public class DefaultImportRegistry implements ImportRegistry {
         else if (name.equals(BMIsPleasant.KEY))
             return ImportUnit.create(name, props -> BMIsPleasant.create(),
                     (lookup, props) -> new BMIsPleasantParser(
-                            lookup.getBooleanEncodedValue(BMIsPleasant.KEY))
+                            lookup.getIntEncodedValue(BMIsPleasant.KEY))
             );
         else if (Curvature.KEY.equals(name))
             return ImportUnit.create(name, props -> Curvature.create(),
