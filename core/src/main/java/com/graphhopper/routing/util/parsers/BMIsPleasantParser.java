@@ -24,9 +24,9 @@ import com.graphhopper.storage.IntsRef;
 
 
 public class BMIsPleasantParser implements TagParser {
-    private final BooleanEncodedValue isPleasantEnc;
+    private final IntEncodedValue isPleasantEnc;
 
-    public BMIsPleasantParser(BooleanEncodedValue isPleasantEnc) {
+    public BMIsPleasantParser(IntEncodedValue isPleasantEnc) {
         this.isPleasantEnc = isPleasantEnc;
     }
 
@@ -52,7 +52,7 @@ public class BMIsPleasantParser implements TagParser {
             isPleasant = wayType.isPleasant() && surface.isPleasant();
         }
 
-        isPleasantEnc.setBool(false, edgeId, edgeIntAccess, isPleasant);
+        isPleasantEnc.setInt(false, edgeId, edgeIntAccess, isPleasant ? 1:0);
     }
 
 }
