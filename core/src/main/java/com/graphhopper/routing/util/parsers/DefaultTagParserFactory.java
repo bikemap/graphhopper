@@ -95,7 +95,7 @@ public class DefaultTagParserFactory implements TagParserFactory {
         else if (name.equals(FerrySpeed.KEY))
             return new FerrySpeedCalculator(lookup.getDecimalEncodedValue(FerrySpeed.KEY));
         else if (name.equals(BMIsPleasant.KEY))
-            return new BMIsPleasantParser(lookup.getBooleanEncodedValue(BMIsPleasant.KEY));
+            return new BMIsPleasantParser(lookup.getIntEncodedValue(BMIsPleasant.KEY));
         else if (replicatedTags.contains(name))
             return new BMWeightParser(lookup.getIntEncodedValue(name));
         return null;
