@@ -18,7 +18,7 @@
 package com.graphhopper.routing.util.parsers;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.ev.BMWayType;
+import com.graphhopper.routing.ev.BmWayType;
 import com.graphhopper.routing.ev.EdgeIntAccess;
 import com.graphhopper.routing.ev.EnumEncodedValue;
 import com.graphhopper.storage.IntsRef;
@@ -26,18 +26,18 @@ import com.graphhopper.storage.IntsRef;
 public class BMWayTypeParser implements TagParser {
 
 
-    private final EnumEncodedValue<BMWayType> wayTypeEnc;
+    private final EnumEncodedValue<BmWayType> wayTypeEnc;
 
-    public BMWayTypeParser(EnumEncodedValue<BMWayType> wayTypeEnc) {
+    public BMWayTypeParser(EnumEncodedValue<BmWayType> wayTypeEnc) {
         this.wayTypeEnc = wayTypeEnc;
     }
 
     @Override
     public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay readerWay, IntsRef relationFlags) {
         String highwayTag = readerWay.getTag("highway");
-        BMWayType wayType = BMWayType.find(highwayTag);
+        BmWayType wayType = BmWayType.find(highwayTag);
 
-        if (wayType == BMWayType.MISSING)
+        if (wayType == BmWayType.MISSING)
             return;
 
         wayTypeEnc.setEnum(false, edgeId, edgeIntAccess, wayType);
