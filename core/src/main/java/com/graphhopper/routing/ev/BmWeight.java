@@ -21,7 +21,7 @@ package com.graphhopper.routing.ev;
 import java.util.Arrays;
 import java.util.List;
 
-public class BMWeight {
+public class BmWeight {
     private static final String environmentTags = System.getenv("REPLICATED_OSM_TAGS");
 
     public static List<String> replicatedTags() {

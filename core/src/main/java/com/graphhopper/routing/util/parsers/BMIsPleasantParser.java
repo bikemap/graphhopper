@@ -33,18 +33,18 @@ public class BMIsPleasantParser implements TagParser {
     @Override
     public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay readerWay, IntsRef relationFlags) {
         String highwayTag = readerWay.getTag("highway");
-        BMWayType wayType = BMWayType.find(highwayTag);
+        BmWayType wayType = BmWayType.find(highwayTag);
 
         String surfaceTag = readerWay.getTag("surface");
         String trackTypeTag = readerWay.getTag("tracktype");
-        BMSurface surface = BMSurfaceParser.withGrade(surfaceTag, trackTypeTag);
-        boolean missingSurface = surface == BMSurface.MISSING || surface == BMSurface.OTHER;
+        BmSurface surface = BMSurfaceParser.withGrade(surfaceTag, trackTypeTag);
+        boolean missingSurface = surface == BmSurface.MISSING || surface == BmSurface.OTHER;
 
         boolean isPleasant;
 
-        if (wayType == BMWayType.MISSING && missingSurface) {
+        if (wayType == BmWayType.MISSING && missingSurface) {
             return;
-        } else if (wayType == BMWayType.MISSING) {
+        } else if (wayType == BmWayType.MISSING) {
             isPleasant = surface.isPleasant();
         } else if (missingSurface) {
             isPleasant = wayType.isPleasant();

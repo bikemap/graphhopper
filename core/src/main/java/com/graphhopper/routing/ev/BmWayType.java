@@ -23,17 +23,17 @@ import java.util.HashMap;
 import java.util.Map;
 
 
-public enum BMWayType {
+public enum BmWayType {
     // Order is important to make ordinal roughly comparable
     CYCLEWAY, LIVING_STREET, QUIET_ROAD, PATH, TRACK, ACCESS_ROAD, PEDESTRIAN_AREA, ROAD, STEPS,
     BUSY_ROAD, MISSING;
 
     public static final String KEY = "bm_way_type";
 
-    private static final Map<String, BMWayType> WAYTYPE_MAP = new HashMap<>();
+    private static final Map<String, BmWayType> WAYTYPE_MAP = new HashMap<>();
 
     static {
-        for (BMWayType way_type : values()) {
+        for (BmWayType way_type : values()) {
             if (way_type == MISSING)
                 continue;
             WAYTYPE_MAP.put(way_type.toString(), way_type);
@@ -62,8 +62,8 @@ public enum BMWayType {
 
     }
 
-    public static EnumEncodedValue<BMWayType> create() {
-        return new EnumEncodedValue<>(KEY, BMWayType.class);
+    public static EnumEncodedValue<BmWayType> create() {
+        return new EnumEncodedValue<>(KEY, BmWayType.class);
     }
 
     @Override
@@ -71,7 +71,7 @@ public enum BMWayType {
         return Helper.toLowerCase(super.toString());
     }
 
-    public static BMWayType find(String name) {
+    public static BmWayType find(String name) {
         if (Helper.isEmpty(name))
             return MISSING;
 

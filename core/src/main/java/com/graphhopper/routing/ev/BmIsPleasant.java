@@ -17,7 +17,7 @@
  */
 package com.graphhopper.routing.ev;
 
-public class BMIsPleasant {
+public class BmIsPleasant {
     public static final String KEY = "bm_is_pleasant";
 
     public static IntEncodedValue create() {
