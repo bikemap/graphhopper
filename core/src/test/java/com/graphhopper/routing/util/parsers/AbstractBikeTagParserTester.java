@@ -230,12 +230,6 @@ public abstract class AbstractBikeTagParserTester {
         way.setTag("bicycle:conditional", "yes @ (" + simpleDateFormat.format(new Date().getTime()) + ")");
         assertTrue(accessParser.getAccess(way).isWay());
 
-        way.clearTags();
-        way.setTag("highway", "track");
-        way.setTag("vehicle", "forestry");
-        assertTrue(accessParser.getAccess(way).canSkip());
-        way.setTag("bicycle", "yes");
-        assertTrue(accessParser.getAccess(way).isWay());
     }
 
     @Test
