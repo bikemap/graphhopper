@@ -24,7 +24,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 
-public enum BMSurface {
+public enum BmSurface {
     // Order is important to make ordinal roughly comparable
     MISSING,
 
@@ -33,10 +33,10 @@ public enum BMSurface {
 
     public static final String KEY = "bm_surface";
 
-    private static final Map<String, BMSurface> SURFACE_MAP = new HashMap<>();
+    private static final Map<String, BmSurface> SURFACE_MAP = new HashMap<>();
 
     static {
-        for (BMSurface surface : values()) {
+        for (BmSurface surface : values()) {
             if (surface == MISSING || surface == OTHER || surface == LOOSE_GRAVEL)
                 continue;
             SURFACE_MAP.put(surface.toString(), surface);
@@ -69,8 +69,8 @@ public enum BMSurface {
          SURFACE_MAP.put("ice", SNOW);
     }
 
-    public static EnumEncodedValue<BMSurface> create() {
-        return new EnumEncodedValue<>(KEY, BMSurface.class);
+    public static EnumEncodedValue<BmSurface> create() {
+        return new EnumEncodedValue<>(KEY, BmSurface.class);
     }
 
     @Override
@@ -78,7 +78,7 @@ public enum BMSurface {
         return Helper.toLowerCase(super.toString());
     }
 
-    public static BMSurface find(String name) {
+    public static BmSurface find(String name) {
         if (Helper.isEmpty(name))
             return MISSING;
 

@@ -18,7 +18,7 @@
 package com.graphhopper.routing.util.parsers;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.ev.BMSurface;
+import com.graphhopper.routing.ev.BmSurface;
 import com.graphhopper.routing.ev.EdgeIntAccess;
 import com.graphhopper.routing.ev.EnumEncodedValue;
 import com.graphhopper.storage.IntsRef;
@@ -26,37 +26,38 @@ import com.graphhopper.storage.IntsRef;
 import java.util.HashMap;
 import java.util.Map;
 
+
 public class BMSurfaceParser implements TagParser {
 
-    private static final Map<String, BMSurface> GRADE_MAP = new HashMap<>();
+    private static final Map<String, BmSurface> GRADE_MAP = new HashMap<>();
 
     static {
-        GRADE_MAP.put("grade1", BMSurface.PAVED);
-        GRADE_MAP.put("grade2", BMSurface.GRAVEL);
-        GRADE_MAP.put("grade3", BMSurface.UNPAVED);
-        GRADE_MAP.put("grade4", BMSurface.GROUND);
-        GRADE_MAP.put("grade5", BMSurface.GROUND);
+        GRADE_MAP.put("grade1", BmSurface.PAVED);
+        GRADE_MAP.put("grade2", BmSurface.GRAVEL);
+        GRADE_MAP.put("grade3", BmSurface.UNPAVED);
+        GRADE_MAP.put("grade4", BmSurface.GROUND);
+        GRADE_MAP.put("grade5", BmSurface.GROUND);
     }
 
-    private final EnumEncodedValue<BMSurface> surfaceEnc;
+    private final EnumEncodedValue<BmSurface> surfaceEnc;
 
-    public BMSurfaceParser(EnumEncodedValue<BMSurface> surfaceEnc) {
+    public BMSurfaceParser(EnumEncodedValue<BmSurface> surfaceEnc) {
         this.surfaceEnc = surfaceEnc;
     }
 
     @Override
     public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay readerWay, IntsRef relationFlags) {
-        BMSurface surface = withGrade(readerWay.getTag("surface"), readerWay.getTag("tracktype"));
+        BmSurface surface = withGrade(readerWay.getTag("surface"), readerWay.getTag("tracktype"));
 
 
-        if (surface == BMSurface.MISSING)
+        if (surface == BmSurface.MISSING)
             return;
 
         surfaceEnc.setEnum(false, edgeId, edgeIntAccess, surface);
     }
 
-    public static BMSurface withGrade(String surfaceTag, String trackTypeTag) {
-        BMSurface surface = BMSurface.find(surfaceTag);
-        return surface == BMSurface.MISSING ? GRADE_MAP.getOrDefault(trackTypeTag, BMSurface.MISSING) : surface;
+    public static BmSurface withGrade(String surfaceTag, String trackTypeTag) {
+        BmSurface surface = BmSurface.find(surfaceTag);
+        return surface == BmSurface.MISSING ? GRADE_MAP.getOrDefault(trackTypeTag, BmSurface.MISSING) : surface;
     }
 }
