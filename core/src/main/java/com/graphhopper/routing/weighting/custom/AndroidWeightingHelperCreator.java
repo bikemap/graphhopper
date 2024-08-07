@@ -81,9 +81,6 @@ public class AndroidWeightingHelperCreator {
             //noinspection ResultOfMethodCallIgnored
             result.createNewFile();
 
-            //noinspection ResultOfMethodCallIgnored
-            result.setReadOnly();
-
             try (JarOutputStream jarOut = new JarOutputStream(
                     new BufferedOutputStream(
                             Files.newOutputStream(result.toPath())
@@ -100,6 +97,9 @@ public class AndroidWeightingHelperCreator {
                 }
             }
         }
+
+        //noinspection ResultOfMethodCallIgnored
+        result.setReadOnly();
 
         return generateClassLoader(dexMaker, result, dexCache, parent);
     }
