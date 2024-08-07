@@ -14,11 +14,18 @@ import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.Polygonal;
 import org.locationtech.jts.geom.prep.PreparedPolygon;
 
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -54,11 +61,69 @@ public class AndroidWeightingHelperCreator {
             generateGetMaxSpeedMethod(dexMaker, generatedClassType, maxSpeed);
             generateGetSpeedMethod(dexMaker, generatedClassType, baseClassType, localVariables, customModel.getSpeed(), maxSpeed);
 
-            ClassLoader loader = dexMaker.generateAndLoad(CustomWeightingHelper.class.getClassLoader(), dexCache);
+            byte[] classBytes = dexMaker.generate();
+            ClassLoader loader = getClassLoader(dexMaker, CustomWeightingHelper.class.getClassLoader(), classBytes);
             return loader.loadClass(classname);
         } catch (Exception ex) {
             String errString = "Cannot compile expression";
             throw new IllegalArgumentException(errString + ": " + ex.getMessage(), ex);
+        }
+    }
+
+    private static ClassLoader getClassLoader(DexMaker dexMaker, ClassLoader parent, byte[] classBytes) throws IOException {
+        if (dexCache == null) {
+            throw new NullPointerException("Dex Cache location is not set");
+        }
+
+        File result = new File(dexCache, generateFileName(dexMaker));
+        if (!result.exists()) {
+            byte[] dex = dexMaker.generate();
+
+            //noinspection ResultOfMethodCallIgnored
+            result.createNewFile();
+
+            //noinspection ResultOfMethodCallIgnored
+            result.setReadOnly();
+
+            try (JarOutputStream jarOut = new JarOutputStream(
+                    new BufferedOutputStream(
+                            Files.newOutputStream(result.toPath())
+                    )
+            )) {
+                JarEntry entry = new JarEntry("classes.dex");
+                entry.setSize(dex.length);
+                jarOut.putNextEntry(entry);
+
+                try {
+                    jarOut.write(dex);
+                } finally {
+                    jarOut.closeEntry();
+                }
+            }
+        }
+
+        return generateClassLoader(dexMaker, result, dexCache, parent);
+    }
+
+    private static String generateFileName(DexMaker dexMaker) {
+        try {
+            Class<?> clazz = Class.forName("com.android.dx.DexMaker");
+            Method privateMethod = clazz.getDeclaredMethod("generateFileName");
+            privateMethod.setAccessible(true);
+            return (String) privateMethod.invoke(dexMaker);
+        } catch (Exception e) {
+            throw new RuntimeException("Cannot generate file name");
+        }
+    }
+
+    private static ClassLoader generateClassLoader(DexMaker dexMaker, File result, File dexCache, ClassLoader parent) {
+        try {
+            Class<?> clazz = Class.forName("com.android.dx.DexMaker");
+            Method privateMethod = clazz.getDeclaredMethod("generateClassLoader", File.class, File.class, ClassLoader.class);
+            privateMethod.setAccessible(true);
+            return (ClassLoader) privateMethod.invoke(dexMaker, result, dexCache, parent);
+        } catch (Exception e) {
+            throw new RuntimeException("Cannot generate file name");
         }
     }
 
@@ -458,9 +523,9 @@ public class AndroidWeightingHelperCreator {
     }
 
     private static void generateGetMaxPriorityMethod(
-        DexMaker dexMaker,
-        TypeId<? extends CustomWeightingHelper> generatedClassType,
-        double globalMaxPriority
+            DexMaker dexMaker,
+            TypeId<? extends CustomWeightingHelper> generatedClassType,
+            double globalMaxPriority
     ) {
         String methodName = "getMaxPriority";
         MethodId<?, Double> method = generatedClassType.getMethod(
