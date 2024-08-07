@@ -61,8 +61,7 @@ public class AndroidWeightingHelperCreator {
             generateGetMaxSpeedMethod(dexMaker, generatedClassType, maxSpeed);
             generateGetSpeedMethod(dexMaker, generatedClassType, baseClassType, localVariables, customModel.getSpeed(), maxSpeed);
 
-            byte[] classBytes = dexMaker.generate();
-            ClassLoader loader = getClassLoader(dexMaker, CustomWeightingHelper.class.getClassLoader(), classBytes);
+            ClassLoader loader = getClassLoader(dexMaker, CustomWeightingHelper.class.getClassLoader());
             return loader.loadClass(classname);
         } catch (Exception ex) {
             String errString = "Cannot compile expression";
@@ -70,7 +69,7 @@ public class AndroidWeightingHelperCreator {
         }
     }
 
-    private static ClassLoader getClassLoader(DexMaker dexMaker, ClassLoader parent, byte[] classBytes) throws IOException {
+    private static ClassLoader getClassLoader(DexMaker dexMaker, ClassLoader parent) throws IOException {
         if (dexCache == null) {
             throw new NullPointerException("Dex Cache location is not set");
         }
