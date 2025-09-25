@@ -18,40 +18,29 @@
 
 package com.graphhopper.routing.lm;
 
-import com.graphhopper.Repeat;
-import com.graphhopper.RepeatRule;
 import com.graphhopper.routing.Dijkstra;
 import com.graphhopper.routing.Path;
-import com.graphhopper.routing.util.CarFlagEncoder;
-import com.graphhopper.routing.util.DefaultEdgeFilter;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValueImpl;
+import com.graphhopper.routing.ev.Subnetwork;
+import com.graphhopper.routing.ev.TurnCost;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.*;
+import com.graphhopper.storage.BaseGraph;
 import com.graphhopper.storage.Directory;
-import com.graphhopper.storage.GraphBuilder;
-import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.storage.RAMDirectory;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.GHUtility;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.RepeatedTest;
 
 import java.util.Random;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class LMApproximatorTest {
 
-    @Rule
-    public RepeatRule repeatRule = new RepeatRule();
-
-    @Before
-    public void init() {
-    }
-
-    @Test
-    @Repeat(times = 5)
+    @RepeatedTest(value = 10)
     public void randomGraph() {
         final long seed = System.nanoTime();
         run(seed);
@@ -59,28 +48,29 @@ public class LMApproximatorTest {
 
     private void run(long seed) {
         Directory dir = new RAMDirectory();
-        CarFlagEncoder encoder = new CarFlagEncoder(5, 5, 1);
-        EncodingManager encodingManager = EncodingManager.create(encoder);
-        GraphHopperStorage graph = new GraphBuilder(encodingManager).setDir(dir).withTurnCosts(true).create();
+        DecimalEncodedValue speedEnc = new DecimalEncodedValueImpl("speed", 5, 5, true);
+        DecimalEncodedValue turnCostEnc = TurnCost.create("car", 1);
+        EncodingManager encodingManager = new EncodingManager.Builder().add(speedEnc).addTurnCostEncodedValue(turnCostEnc).add(Subnetwork.create("car")).build();
+        BaseGraph graph = new BaseGraph.Builder(encodingManager).setDir(dir).withTurnCosts(true).create();
 
         Random rnd = new Random(seed);
-        GHUtility.buildRandomGraph(graph, rnd, 100, 2.2, true, true, encoder.getAverageSpeedEnc(), 0.7, 0.8, 0.8);
+        GHUtility.buildRandomGraph(graph, rnd, 100, 2.2, true, speedEnc, null, 0.8, 0.8);
 
-        Weighting weighting = new FastestWeighting(encoder);
+        Weighting weighting = new SpeedWeighting(speedEnc);
 
-        PrepareLandmarks lm = new PrepareLandmarks(dir, graph, new LMConfig("c", weighting), 16);
+        PrepareLandmarks lm = new PrepareLandmarks(dir, graph, encodingManager, new LMConfig("car", weighting), 16);
         lm.setMaximumWeight(10000);
         lm.doWork();
         LandmarkStorage landmarkStorage = lm.getLandmarkStorage();
 
         for (int t = 0; t < graph.getNodes(); t++) {
-            LMApproximator lmApproximator = new LMApproximator(graph, weighting, graph.getNodes(), landmarkStorage, 8, landmarkStorage.getFactor(), false);
+            LMApproximator lmApproximator = new LMApproximator(graph, weighting, weighting, graph.getNodes(), landmarkStorage, 8, landmarkStorage.getFactor(), false);
             WeightApproximator reverseLmApproximator = lmApproximator.reverse();
             BeelineWeightApproximator beelineApproximator = new BeelineWeightApproximator(graph.getNodeAccess(), weighting);
             WeightApproximator reverseBeelineApproximator = beelineApproximator.reverse();
             PerfectApproximator perfectApproximator = new PerfectApproximator(graph, weighting, TraversalMode.NODE_BASED, false);
             PerfectApproximator reversePerfectApproximator = new PerfectApproximator(graph, weighting, TraversalMode.NODE_BASED, true);
-            BalancedWeightApproximator balancedWeightApproximator = new BalancedWeightApproximator(new LMApproximator(graph, weighting, graph.getNodes(), landmarkStorage, 8, landmarkStorage.getFactor(), false));
+            BalancedWeightApproximator balancedWeightApproximator = new BalancedWeightApproximator(new LMApproximator(graph, weighting, weighting, graph.getNodes(), landmarkStorage, 8, landmarkStorage.getFactor(), false));
 
             lmApproximator.setTo(t);
             beelineApproximator.setTo(t);
@@ -119,7 +109,7 @@ public class LMApproximatorTest {
                     // That's a requirement for normal A*-implementations, because if it is violated,
                     // the heap-weight of settled nodes can decrease, and that would mean our
                     // stopping criterion is not sufficient.
-                    EdgeIterator neighbors = graph.createEdgeExplorer(DefaultEdgeFilter.outEdges(encoder)).setBaseNode(v);
+                    EdgeIterator neighbors = graph.createEdgeExplorer(edge -> edge.get(speedEnc) > 0).setBaseNode(v);
                     while (neighbors.next()) {
                         int w = neighbors.getAdjNode();
                         double vw = weighting.calcEdgeWeight(neighbors, false);
@@ -130,7 +120,7 @@ public class LMApproximatorTest {
                         }
                     }
 
-                    neighbors = graph.createEdgeExplorer(DefaultEdgeFilter.outEdges(encoder)).setBaseNode(v);
+                    neighbors = graph.createEdgeExplorer(edge -> edge.get(speedEnc) > 0).setBaseNode(v);
                     while (neighbors.next()) {
                         int w = neighbors.getAdjNode();
                         double vw = weighting.calcEdgeWeight(neighbors, false);
@@ -167,8 +157,8 @@ public class LMApproximatorTest {
 
             }
 
-            assertEquals("too many over approximated weights, seed: " + seed, 0, nOverApproximatedWeights);
-            assertEquals("too many inconsistent weights, seed: " + seed, 0, nInconsistentWeights);
+            assertEquals(0, nOverApproximatedWeights, "too many over approximated weights, seed: " + seed);
+            assertEquals(0, nInconsistentWeights, "too many inconsistent weights, seed: " + seed);
         }
     }
 

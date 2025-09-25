@@ -25,6 +25,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.graphhopper.util.details.PathDetail;
 
 import java.io.IOException;
+import java.util.Map;
 
 public class PathDetailDeserializer extends JsonDeserializer<PathDetail> {
 
@@ -41,14 +42,16 @@ public class PathDetailDeserializer extends JsonDeserializer<PathDetail> {
         PathDetail pd;
         if (val.isBoolean())
             pd = new PathDetail(val.asBoolean());
-        else if (val.isLong())
-            pd = new PathDetail(val.asLong());
-        else if (val.isInt())
-            pd = new PathDetail(val.asInt());
         else if (val.isDouble())
             pd = new PathDetail(val.asDouble());
+        else if (val.canConvertToLong())
+            pd = new PathDetail(val.asLong());
         else if (val.isTextual())
             pd = new PathDetail(val.asText());
+        else if (val.isObject())
+            pd = new PathDetail(jp.getCodec().treeToValue(val, Map.class));
+        else if (val.isNull())
+            pd = new PathDetail(null);
         else
             throw new JsonParseException(jp, "Unsupported type of PathDetail value " + pathDetail.getNodeType().name());
 

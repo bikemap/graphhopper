@@ -20,6 +20,7 @@ package com.graphhopper.reader.dem;
 import com.graphhopper.storage.DataAccess;
 import com.graphhopper.util.Downloader;
 
+import javax.net.ssl.SSLException;
 import java.awt.image.Raster;
 import java.io.File;
 import java.io.IOException;
@@ -32,7 +33,7 @@ import java.util.Map;
  *
  * @author Robin Boldt
  */
-public abstract class AbstractTiffElevationProvider extends AbstractElevationProvider {
+public abstract class AbstractTiffElevationProvider extends TileBasedElevationProvider {
     private final Map<String, HeightTile> cacheData = new HashMap<>();
     final double precision = 1e7;
 
@@ -86,6 +87,16 @@ public abstract class AbstractTiffElevationProvider extends AbstractElevationPro
      */
     abstract String getFileNameOfLocalFile(double lat, double lon);
 
+    /**
+     * Return the local file name without file ending, has to be lower case, because DataAccess only supports lower case names.
+     */
+    abstract String getFileName(double lat, double lon);
+
+    /**
+     * Returns the complete URL to download the file
+     */
+    abstract String getDownloadURL(double lat, double lon);
+
     @Override
     public double getEle(double lat, double lon) {
         // Return fast, if there is no data available
@@ -107,7 +118,7 @@ public abstract class AbstractTiffElevationProvider extends AbstractElevationPro
             demProvider.setInterpolate(interpolate);
 
             cacheData.put(name, demProvider);
-            DataAccess heights = getDirectory().find(name + ".gh");
+            DataAccess heights = getDirectory().create(name + ".gh");
             demProvider.setHeights(heights);
             boolean loadExisting = false;
             try {
@@ -117,23 +128,24 @@ public abstract class AbstractTiffElevationProvider extends AbstractElevationPro
             }
 
             if (!loadExisting) {
-                String zippedURL = getDownloadURL(lat, lon);
-                File file = new File(cacheDir, new File(getFileNameOfLocalFile(lat, lon)).getName());
-
-                try {
-                    downloadFile(file, zippedURL);
-                } catch (IOException e) {
-                    demProvider.setSeaLevel(true);
-                    // use small size on disc and in-memory
-                    heights.setSegmentSize(100).create(10).
-                            flush();
-                    return 0;
-                }
+                File zipFile = new File(cacheDir, new File(getFileNameOfLocalFile(lat, lon)).getName());
+                if (!zipFile.exists())
+                    try {
+                        String zippedURL = getDownloadURL(lat, lon);
+                        downloadToFile(zipFile, zippedURL);
+                    } catch (SSLException ex) {
+                        throw new IllegalStateException("SSL problem with elevation provider " + getClass().getSimpleName(), ex);
+                    } catch (IOException ex) {
+                        demProvider.setSeaLevel(true);
+                        // use small size on disc and in-memory
+                        heights.create(10).flush();
+                        return 0;
+                    }
 
                 // short == 2 bytes
-                heights.create(2 * WIDTH * HEIGHT);
+                heights.create(2L * WIDTH * HEIGHT);
 
-                Raster raster = generateRasterFromFile(file, name + ".tif");
+                Raster raster = readFile(zipFile, name + ".tif");
                 fillDataAccessWithElevationData(raster, heights, WIDTH);
 
             } // loadExisting
@@ -145,12 +157,12 @@ public abstract class AbstractTiffElevationProvider extends AbstractElevationPro
         return demProvider.getHeight(lat, lon);
     }
 
-    abstract Raster generateRasterFromFile(File file, String tifName);
+    abstract Raster readFile(File file, String tifName);
 
     /**
      * Download a file at the provided url and save it as the given downloadFile if the downloadFile does not exist.
      */
-    private void downloadFile(File downloadFile, String url) throws IOException {
+    private void downloadToFile(File downloadFile, String url) throws IOException {
         if (!downloadFile.exists()) {
             int max = 3;
             for (int trial = 0; trial < max; trial++) {
@@ -181,7 +193,7 @@ public abstract class AbstractTiffElevationProvider extends AbstractElevationPro
                     if (val < -1000 || val > 12000)
                         val = Short.MIN_VALUE;
 
-                    heights.setShort(2 * (y * dataAccessWidth + x), val);
+                    heights.setShort(2 * ((long) y * dataAccessWidth + x), val);
                 }
             }
             heights.flush();

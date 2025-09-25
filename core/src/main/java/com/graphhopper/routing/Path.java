@@ -19,7 +19,6 @@ package com.graphhopper.routing;
 
 import com.carrotsearch.hppc.IntArrayList;
 import com.carrotsearch.hppc.IntIndexedContainer;
-import com.graphhopper.coll.GHIntArrayList;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.util.EdgeIterator;
@@ -41,24 +40,25 @@ import java.util.List;
  * @author easbar
  */
 public class Path {
-    Graph graph;
-    double distance;
-    long time;
-    int endNode = -1;
-    private boolean reverseOrder = true;
+    final Graph graph;
+    private final NodeAccess nodeAccess;
+    private double weight = Double.MAX_VALUE;
+    private double distance;
+    private long time;
+    private IntArrayList edgeIds = new IntArrayList();
+    private int fromNode = -1;
+    private int endNode = -1;
     private List<String> description;
     private boolean found;
-    private int fromNode = -1;
-    private GHIntArrayList edgeIds;
-    private double weight;
-    private NodeAccess nodeAccess;
     private String debugInfo = "";
 
     public Path(Graph graph) {
-        this.weight = Double.MAX_VALUE;
         this.graph = graph;
         this.nodeAccess = graph.getNodeAccess();
-        this.edgeIds = new GHIntArrayList();
+    }
+
+    public Graph getGraph() {
+        return graph;
     }
 
     /**
@@ -76,15 +76,27 @@ public class Path {
         return this;
     }
 
+    public IntArrayList getEdges() {
+        return edgeIds;
+    }
+
+    public void setEdges(IntArrayList edgeIds) {
+        this.edgeIds = edgeIds;
+    }
+
     public void addEdge(int edge) {
         edgeIds.add(edge);
+    }
+
+    public int getEdgeCount() {
+        return edgeIds.size();
     }
 
     public int getEndNode() {
         return endNode;
     }
 
-    protected Path setEndNode(int end) {
+    public Path setEndNode(int end) {
         endNode = end;
         return this;
     }
@@ -102,13 +114,9 @@ public class Path {
     /**
      * We need to remember fromNode explicitly as its not saved in one edgeId of edgeIds.
      */
-    protected Path setFromNode(int from) {
+    public Path setFromNode(int from) {
         fromNode = from;
         return this;
-    }
-
-    public int getEdgeCount() {
-        return edgeIds.size();
     }
 
     public boolean isFound() {
@@ -118,14 +126,6 @@ public class Path {
     public Path setFound(boolean found) {
         this.found = found;
         return this;
-    }
-
-    void reverseEdges() {
-        if (!reverseOrder)
-            throw new IllegalStateException("Switching order multiple times is not supported");
-
-        reverseOrder = false;
-        edgeIds.reverse();
     }
 
     public Path setDistance(double distance) {
@@ -150,6 +150,11 @@ public class Path {
      */
     public long getTime() {
         return time;
+    }
+
+    public Path setTime(long time) {
+        this.time = time;
+        return this;
     }
 
     public Path addTime(long time) {
@@ -272,7 +277,7 @@ public class Path {
         final PointList points = new PointList(edgeIds.size() + 1, nodeAccess.is3D());
         if (edgeIds.isEmpty()) {
             if (isFound()) {
-                points.add(graph.getNodeAccess(), endNode);
+                points.add(nodeAccess, endNode);
             }
             return points;
         }
@@ -283,7 +288,7 @@ public class Path {
             @Override
             public void next(EdgeIteratorState eb, int index, int prevEdgeId) {
                 PointList pl = eb.fetchWayGeometry(FetchMode.PILLAR_AND_ADJ);
-                for (int j = 0; j < pl.getSize(); j++) {
+                for (int j = 0; j < pl.size(); j++) {
                     points.add(pl, j);
                 }
             }
@@ -294,10 +299,6 @@ public class Path {
             }
         });
         return points;
-    }
-
-    public int getSize() {
-        return edgeIds.size();
     }
 
     @Override

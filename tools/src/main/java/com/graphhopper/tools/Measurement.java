@@ -17,8 +17,7 @@
  */
 package com.graphhopper.tools;
 
-import com.bedatadriven.jackson.datatype.jts.JtsModule;
-import com.fasterxml.jackson.annotation.JsonInclude;
+import com.carrotsearch.hppc.IntArrayList;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.graphhopper.*;
@@ -28,16 +27,13 @@ import com.graphhopper.config.CHProfile;
 import com.graphhopper.config.LMProfile;
 import com.graphhopper.config.Profile;
 import com.graphhopper.jackson.Jackson;
-import com.graphhopper.json.geo.JsonFeatureCollection;
-import com.graphhopper.reader.DataReader;
-import com.graphhopper.reader.osm.GraphHopperOSM;
+import com.graphhopper.routing.ch.PrepareContractionHierarchies;
+import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.lm.LMConfig;
 import com.graphhopper.routing.lm.PrepareLandmarks;
 import com.graphhopper.routing.util.*;
-import com.graphhopper.routing.util.spatialrules.AbstractSpatialRule;
-import com.graphhopper.routing.util.spatialrules.SpatialRuleLookup;
-import com.graphhopper.routing.util.spatialrules.SpatialRuleLookupBuilder;
-import com.graphhopper.routing.util.spatialrules.SpatialRuleLookupBuilder.SpatialRuleFactory;
-import com.graphhopper.routing.weighting.custom.CustomProfile;
+import com.graphhopper.routing.weighting.Weighting;
+
 import com.graphhopper.routing.weighting.custom.CustomWeighting;
 import com.graphhopper.storage.*;
 import com.graphhopper.storage.index.LocationIndex;
@@ -50,14 +46,12 @@ import com.graphhopper.util.shapes.GHPoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -65,10 +59,10 @@ import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.graphhopper.util.GHUtility.readCountries;
 import static com.graphhopper.util.Helper.*;
 import static com.graphhopper.util.Parameters.Algorithms.ALT_ROUTE;
-import static com.graphhopper.util.Parameters.Algorithms.DIJKSTRA_BI;
-import static com.graphhopper.util.Parameters.Routing.BLOCK_AREA;
+import static com.graphhopper.util.Parameters.Routing.U_TURN_COSTS;
 
 /**
  * Used to run performance benchmarks for routing and other functionalities of GraphHopper
@@ -80,6 +74,7 @@ public class Measurement {
     private static final Logger logger = LoggerFactory.getLogger(Measurement.class);
     private final Map<String, Object> properties = new TreeMap<>();
     private long seed;
+    private boolean stopOnError;
     private int maxNode;
     private String vehicle;
 
@@ -94,9 +89,9 @@ public class Measurement {
     // Every value is one y-value in a separate diagram with an identical x-value for every Measurement.start call
     void start(PMap args) throws IOException {
         final String graphLocation = args.getString("graph.location", "");
-        final String countryBordersDirectory = args.getString("spatial_rules.borders_directory", "");
         final boolean useJson = args.getBool("measurement.json", false);
         boolean cleanGraph = args.getBool("measurement.clean", false);
+        stopOnError = args.getBool("measurement.stop_on_error", false);
         String summaryLocation = args.getString("measurement.summaryfile", "");
         final String timeStamp = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss").format(new Date());
         put("measurement.timestamp", timeStamp);
@@ -120,40 +115,38 @@ public class Measurement {
         int count = args.getInt("measurement.count", 5000);
         put("measurement.name", args.getString("measurement.name", "no_name"));
         put("measurement.map", args.getString("datareader.file", "unknown"));
-        String blockAreaStr = args.getString("measurement.block_area", "");
         final boolean useMeasurementTimeAsRefTime = args.getBool("measurement.use_measurement_time_as_ref_time", false);
         if (useMeasurementTimeAsRefTime && !useJson) {
             throw new IllegalArgumentException("Using measurement time as reference time only works with json files");
         }
 
-        GraphHopper hopper = new GraphHopperOSM() {
+        GraphHopper hopper = new GraphHopper() {
             @Override
-            protected void prepareCH(boolean closeEarly) {
+            protected Map<String, PrepareContractionHierarchies.Result> prepareCH(boolean closeEarly, List<CHConfig> configsToPrepare) {
                 StopWatch sw = new StopWatch().start();
-                super.prepareCH(closeEarly);
+                Map<String, PrepareContractionHierarchies.Result> result = super.prepareCH(closeEarly, configsToPrepare);
                 // note that we measure the total time of all (possibly edge&node) CH preparations
                 put(Parameters.CH.PREPARE + "time", sw.stop().getMillis());
-                int edges = getGraphHopperStorage().getEdges();
-                if (!getCHPreparationHandler().getNodeBasedCHConfigs().isEmpty()) {
-                    CHConfig chConfig = getCHPreparationHandler().getNodeBasedCHConfigs().get(0);
-                    int edgesAndShortcuts = getGraphHopperStorage().getCHGraph(chConfig).getEdges();
-                    put(Parameters.CH.PREPARE + "node.shortcuts", edgesAndShortcuts - edges);
-                    put(Parameters.CH.PREPARE + "node.time", getCHPreparationHandler().getPreparation(chConfig).getTotalPrepareTime());
+                if (result.get("profile_no_tc") != null) {
+                    int shortcuts = result.get("profile_no_tc").getCHStorage().getShortcuts();
+                    put(Parameters.CH.PREPARE + "node.shortcuts", shortcuts);
+                    put(Parameters.CH.PREPARE + "node.time", result.get("profile_no_tc").getTotalPrepareTime());
                 }
-                if (!getCHPreparationHandler().getEdgeBasedCHConfigs().isEmpty()) {
-                    CHConfig chConfig = getCHPreparationHandler().getEdgeBasedCHConfigs().get(0);
-                    int edgesAndShortcuts = getGraphHopperStorage().getCHGraph(chConfig).getEdges();
-                    put(Parameters.CH.PREPARE + "edge.shortcuts", edgesAndShortcuts - edges);
-                    put(Parameters.CH.PREPARE + "edge.time", getCHPreparationHandler().getPreparation(chConfig).getTotalPrepareTime());
+                if (result.get("profile_tc") != null) {
+                    int shortcuts = result.get("profile_tc").getCHStorage().getShortcuts();
+                    put(Parameters.CH.PREPARE + "edge.shortcuts", shortcuts);
+                    put(Parameters.CH.PREPARE + "edge.time", result.get("profile_tc").getTotalPrepareTime());
                 }
+                return result;
             }
 
             @Override
-            protected void loadOrPrepareLM(boolean closeEarly) {
-                super.loadOrPrepareLM(closeEarly);
-                for (PrepareLandmarks plm : getLMPreparationHandler().getPreparations()) {
+            protected List<PrepareLandmarks> prepareLM(boolean closeEarly, List<LMConfig> configsToPrepare) {
+                List<PrepareLandmarks> prepareLandmarks = super.prepareLM(closeEarly, configsToPrepare);
+                for (PrepareLandmarks plm : prepareLandmarks) {
                     put(Landmark.PREPARE + "time", plm.getTotalPrepareTime());
                 }
+                return prepareLandmarks;
             }
 
             @Override
@@ -164,122 +157,128 @@ public class Measurement {
             }
 
             @Override
-            protected DataReader importData() throws IOException {
+            protected void importOSM() {
                 StopWatch sw = new StopWatch().start();
-                DataReader dr = super.importData();
+                super.importOSM();
                 sw.stop();
                 put("graph.import_time", sw.getSeconds());
                 put("graph.import_time_ms", sw.getMillis());
-                return dr;
             }
         };
 
-        hopper.init(createConfigFromArgs(args)).
-                // use server to allow path simplification
-                        forServer();
+        hopper.init(createConfigFromArgs(args));
         if (cleanGraph) {
             hopper.clean();
         }
 
-        hopper.getCHPreparationHandler().setDisablingAllowed(true);
-        hopper.getLMPreparationHandler().setDisablingAllowed(true);
         hopper.importOrLoad();
 
-        GraphHopperStorage g = hopper.getGraphHopperStorage();
+        BaseGraph g = hopper.getBaseGraph();
         EncodingManager encodingManager = hopper.getEncodingManager();
-        if (encodingManager.fetchEdgeEncoders().size() != 1) {
-            throw new IllegalArgumentException("There has to be exactly one encoder for each measurement");
-        }
-        FlagEncoder encoder = encodingManager.fetchEdgeEncoders().get(0);
-        final String vehicleStr = encoder.toString();
+        BooleanEncodedValue accessEnc = encodingManager.getBooleanEncodedValue(VehicleAccess.key(vehicle));
+        boolean withTurnCosts = encodingManager.hasTurnEncodedValue(TurnRestriction.key(vehicle));
 
         StopWatch sw = new StopWatch().start();
         try {
             maxNode = g.getNodes();
 
             final boolean runSlow = args.getBool("measurement.run_slow_routing", true);
-            GHBitSet allowedEdges = printGraphDetails(g, vehicleStr);
-            printMiscUnitPerfTests(g, false, encoder, count * 100, allowedEdges);
-            printLocationIndexQuery(g, hopper.getLocationIndex(), count);
+            printGraphDetails(g, vehicle);
+            measureGraphTraversal(g, accessEnc, count * 100);
+            measureLocationIndex(g, hopper.getLocationIndex(), count);
 
             if (runSlow) {
                 boolean isCH = false;
                 boolean isLM = false;
-                printTimeOfRouteQuery(hopper, new QuerySettings("routing", count / 20, isCH, isLM).
+                measureRouting(hopper, new QuerySettings("routing", count / 20, isCH, isLM).
                         withInstructions());
-                if (encoder.supportsTurnCosts())
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routing_edge", count / 20, isCH, isLM).
+                measureRouting(hopper, new QuerySettings("routing_alt", count / 500, isCH, isLM).
+                        alternative());
+                if (withTurnCosts) {
+                    measureRouting(hopper, new QuerySettings("routing_edge", count / 20, isCH, isLM).
                             withInstructions().edgeBased());
-                if (!blockAreaStr.isEmpty())
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routing_block_area", count / 20, isCH, isLM).
-                            withInstructions().blockArea(blockAreaStr));
+                    // unfortunately alt routes are so slow that we cannot really afford many iterations
+                    measureRouting(hopper, new QuerySettings("routing_edge_alt", count / 500, isCH, isLM).
+                            edgeBased().alternative()
+                    );
+                }
             }
 
             if (hopper.getLMPreparationHandler().isEnabled()) {
-                System.gc();
+                gcAndWait();
                 boolean isCH = false;
                 boolean isLM = true;
-                Helper.parseList(args.getString("measurement.lm.active_counts", "[4,8,12,16]")).stream()
+                Helper.parseList(args.getString("measurement.lm.active_counts", "[4,8,12]")).stream()
                         .mapToInt(Integer::parseInt).forEach(activeLMCount -> {
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingLM" + activeLMCount, count / 4, isCH, isLM).
-                            withInstructions().activeLandmarks(activeLMCount));
-                    if (args.getBool("measurement.lm.edge_based", encoder.supportsTurnCosts())) {
-                        printTimeOfRouteQuery(hopper, new QuerySettings("routingLM" + activeLMCount + "_edge", count / 4, isCH, isLM).
-                                withInstructions().activeLandmarks(activeLMCount).edgeBased());
-                    }
-                });
-
-                final int activeLMCount = 8;
-                if (!blockAreaStr.isEmpty())
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingLM" + activeLMCount + "_block_area", count / 4, isCH, isLM).
-                            withInstructions().activeLandmarks(activeLMCount).blockArea(blockAreaStr));
+                            measureRouting(hopper, new QuerySettings("routingLM" + activeLMCount, count / 20, isCH, isLM).
+                                    withInstructions().activeLandmarks(activeLMCount));
+                            measureRouting(hopper, new QuerySettings("routingLM" + activeLMCount + "_alt", count / 500, isCH, isLM).
+                                    activeLandmarks(activeLMCount).alternative());
+                            if (args.getBool("measurement.lm.edge_based", withTurnCosts)) {
+                                measureRouting(hopper, new QuerySettings("routingLM" + activeLMCount + "_edge", count / 20, isCH, isLM).
+                                        withInstructions().activeLandmarks(activeLMCount).edgeBased());
+                                measureRouting(hopper, new QuerySettings("routingLM" + activeLMCount + "_alt_edge", count / 500, isCH, isLM).
+                                        activeLandmarks(activeLMCount).edgeBased().alternative());
+                            }
+                        });
             }
 
             if (hopper.getCHPreparationHandler().isEnabled()) {
                 boolean isCH = true;
                 boolean isLM = false;
-//                compareCHWithAndWithoutSOD(hopper, count/5);
-                System.gc();
-                if (!hopper.getCHPreparationHandler().getNodeBasedCHConfigs().isEmpty()) {
-                    CHConfig chConfig = hopper.getCHPreparationHandler().getNodeBasedCHConfigs().get(0);
-                    CHGraph lg = g.getCHGraph(chConfig);
-                    fillAllowedEdges(lg.getAllEdges(), allowedEdges);
-                    printMiscUnitPerfTests(lg, isCH, encoder, count * 100, allowedEdges);
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingCH", count, isCH, isLM).
+                gcAndWait();
+                RoutingCHGraph nodeBasedCH = hopper.getCHGraphs().get("profile_no_tc");
+                if (nodeBasedCH != null) {
+                    measureGraphTraversalCH(nodeBasedCH, count * 100);
+                    gcAndWait();
+                    measureRouting(hopper, new QuerySettings("routingCH", count, isCH, isLM).
                             withInstructions().sod());
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingCH_alt", count / 10, isCH, isLM).
+                    measureRouting(hopper, new QuerySettings("routingCH_alt", count / 100, isCH, isLM).
                             withInstructions().sod().alternative());
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingCH_with_hints", count, isCH, isLM).
+                    measureRouting(hopper, new QuerySettings("routingCH_with_hints", count, isCH, isLM).
                             withInstructions().sod().withPointHints());
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingCH_no_sod", count, isCH, isLM).
+                    measureRouting(hopper, new QuerySettings("routingCH_no_sod", count, isCH, isLM).
                             withInstructions());
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingCH_no_instr", count, isCH, isLM).
+                    measureRouting(hopper, new QuerySettings("routingCH_no_instr", count, isCH, isLM).
                             sod());
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingCH_full", count, isCH, isLM).
-                            withInstructions().withPointHints().sod().simplify());
+                    measureRouting(hopper, new QuerySettings("routingCH_full", count, isCH, isLM).
+                            withInstructions().withPointHints().sod().simplify().pathDetails());
+                    // for some strange (jvm optimizations) reason adding these measurements reduced the measured time for routingCH_full... see #2056
+                    measureRouting(hopper, new QuerySettings("routingCH_via_100", count / 100, isCH, isLM).
+                            withPoints(100).sod());
+                    measureRouting(hopper, new QuerySettings("routingCH_via_100_full", count / 100, isCH, isLM).
+                            withPoints(100).sod().withInstructions().simplify().pathDetails());
                 }
-                if (!hopper.getCHPreparationHandler().getEdgeBasedCHConfigs().isEmpty()) {
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingCH_edge", count, isCH, isLM).
+                RoutingCHGraph edgeBasedCH = hopper.getCHGraphs().get("profile_tc");
+                if (edgeBasedCH != null) {
+                    measureRouting(hopper, new QuerySettings("routingCH_edge", count, isCH, isLM).
                             edgeBased().withInstructions());
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingCH_edge_no_instr", count, isCH, isLM).
+                    measureRouting(hopper, new QuerySettings("routingCH_edge_alt", count / 100, isCH, isLM).
+                            edgeBased().withInstructions().alternative());
+                    measureRouting(hopper, new QuerySettings("routingCH_edge_no_instr", count, isCH, isLM).
                             edgeBased());
-                    printTimeOfRouteQuery(hopper, new QuerySettings("routingCH_edge_full", count, isCH, isLM).
-                            edgeBased().withInstructions().withPointHints().simplify());
+                    measureRouting(hopper, new QuerySettings("routingCH_edge_full", count, isCH, isLM).
+                            edgeBased().withInstructions().withPointHints().simplify().pathDetails());
+                    // for some strange (jvm optimizations) reason adding these measurements reduced the measured time for routingCH_edge_full... see #2056
+                    measureRouting(hopper, new QuerySettings("routingCH_edge_via_100", count / 100, isCH, isLM).
+                            withPoints(100).edgeBased().sod());
+                    measureRouting(hopper, new QuerySettings("routingCH_edge_via_100_full", count / 100, isCH, isLM).
+                            withPoints(100).edgeBased().sod().withInstructions().simplify().pathDetails());
                 }
             }
-            if (!isEmpty(countryBordersDirectory)) {
-                printSpatialRuleLookupTest(countryBordersDirectory, count * 100);
-            }
+            measureCountryAreaIndex(count);
 
         } catch (Exception ex) {
             logger.error("Problem while measuring " + graphLocation, ex);
+            if (stopOnError)
+                System.exit(1);
             put("error", ex.toString());
         } finally {
             put("gh.gitinfo", Constants.GIT_INFO != null ? Constants.GIT_INFO.toString() : "unknown");
             put("measurement.count", count);
             put("measurement.seed", seed);
             put("measurement.time", sw.stop().getMillis());
-            System.gc();
+            gcAndWait();
             put("measurement.totalMB", getTotalMB());
             put("measurement.usedMB", getUsedMB());
 
@@ -296,14 +295,10 @@ public class Measurement {
 
     private GraphHopperConfig createConfigFromArgs(PMap args) {
         GraphHopperConfig ghConfig = new GraphHopperConfig(args);
-        String encodingManagerString = args.getString("graph.flag_encoders", "car");
-        List<FlagEncoder> tmpEncoders = EncodingManager.create(encodingManagerString).fetchEdgeEncoders();
-        if (tmpEncoders.size() != 1) {
-            logger.warn("You configured multiple encoders, only the first one is used for the measurements");
-        }
-        vehicle = tmpEncoders.get(0).toString();
-        boolean turnCosts = tmpEncoders.get(0).supportsTurnCosts();
-        String weighting = args.getString("measurement.weighting", "fastest");
+        vehicle = args.getString("measurement.vehicle", "car");
+        boolean turnCosts = args.getBool("measurement.turn_costs", false);
+        int uTurnCosts = args.getInt("measurement.u_turn_costs", 40);
+        String weighting = args.getString("measurement.weighting", "custom");
         boolean useCHEdge = args.getBool("measurement.ch.edge", true);
         boolean useCHNode = args.getBool("measurement.ch.node", true);
         boolean useLM = args.getBool("measurement.lm", true);
@@ -314,14 +309,14 @@ public class Measurement {
                 throw new IllegalArgumentException("To make use of a custom model you need to set measurement.weighting to 'custom'");
             // use custom profile(s) as specified in the given custom model file
             CustomModel customModel = loadCustomModel(customModelFile);
-            profiles.add(new CustomProfile("profile_no_tc").setCustomModel(customModel).setVehicle(vehicle).setTurnCosts(false));
+            profiles.add(new Profile("profile_no_tc").setCustomModel(customModel).setVehicle(vehicle).setTurnCosts(false));
             if (turnCosts)
-                profiles.add(new CustomProfile("profile_tc").setCustomModel(customModel).setVehicle(vehicle).setTurnCosts(true));
+                profiles.add(new Profile("profile_tc").setCustomModel(customModel).setVehicle(vehicle).setTurnCosts(true).putHint(U_TURN_COSTS, uTurnCosts));
         } else {
             // use standard profiles
-            profiles.add(new Profile("profile_no_tc").setVehicle(vehicle).setWeighting(weighting).setTurnCosts(false));
+            profiles.add(new Profile("profile_no_tc").setVehicle(vehicle).setTurnCosts(false));
             if (turnCosts)
-                profiles.add(new Profile("profile_tc").setVehicle(vehicle).setWeighting(weighting).setTurnCosts(true));
+                profiles.add(new Profile("profile_tc").setVehicle(vehicle).setTurnCosts(true).putHint(U_TURN_COSTS, uTurnCosts));
         }
         ghConfig.setProfiles(profiles);
 
@@ -347,8 +342,8 @@ public class Measurement {
         private final int count;
         final boolean ch, lm;
         int activeLandmarks = -1;
-        boolean withInstructions, withPointHints, sod, edgeBased, simplify, alternative;
-        String blockArea;
+        boolean withInstructions, withPointHints, sod, edgeBased, simplify, pathDetails, alternative;
+        int points = 2;
 
         QuerySettings(String prefix, int count, boolean isCH, boolean isLM) {
             this.prefix = prefix;
@@ -359,6 +354,11 @@ public class Measurement {
 
         QuerySettings withInstructions() {
             this.withInstructions = true;
+            return this;
+        }
+
+        QuerySettings withPoints(int points) {
+            this.points = points;
             return this;
         }
 
@@ -387,265 +387,135 @@ public class Measurement {
             return this;
         }
 
+        QuerySettings pathDetails() {
+            this.pathDetails = true;
+            return this;
+        }
+
         QuerySettings alternative() {
             alternative = true;
             return this;
         }
-
-        QuerySettings blockArea(String str) {
-            blockArea = str;
-            return this;
-        }
     }
 
-    void fillAllowedEdges(AllEdgesIterator iter, GHBitSet bs) {
-        bs.clear();
-        while (iter.next()) {
-            bs.add(iter.getEdge());
-        }
-    }
-
-    private GHBitSet printGraphDetails(GraphHopperStorage g, String vehicleStr) {
+    private void printGraphDetails(BaseGraph g, String vehicleStr) {
         // graph size (edge, node and storage size)
         put("graph.nodes", g.getNodes());
         put("graph.edges", g.getAllEdges().length());
         put("graph.size_in_MB", g.getCapacity() / MB);
         put("graph.encoder", vehicleStr);
 
-        AllEdgesIterator iter = g.getAllEdges();
-        final int maxEdgesId = g.getAllEdges().length();
-        final GHBitSet allowedEdges = new GHBitSetImpl(maxEdgesId);
-        fillAllowedEdges(iter, allowedEdges);
-        put("graph.valid_edges", allowedEdges.getCardinality());
-        return allowedEdges;
+        final GHBitSet validEdges = getValidEdges(g);
+        put("graph.valid_edges", validEdges.getCardinality());
     }
 
-    private void printLocationIndexQuery(Graph g, final LocationIndex idx, int count) {
+    private void measureLocationIndex(Graph g, final LocationIndex idx, int count) {
         count *= 2;
         final BBox bbox = g.getBounds();
         final double latDelta = bbox.maxLat - bbox.minLat;
         final double lonDelta = bbox.maxLon - bbox.minLon;
         final Random rand = new Random(seed);
-        MiniPerfTest miniPerf = new MiniPerfTest() {
-            @Override
-            public int doCalc(boolean warmup, int run) {
-                double lat = rand.nextDouble() * latDelta + bbox.minLat;
-                double lon = rand.nextDouble() * lonDelta + bbox.minLon;
-                int val = idx.findClosest(lat, lon, EdgeFilter.ALL_EDGES).getClosestNode();
-//                if (!warmup && val >= 0)
-//                    list.add(val);
-
-                return val;
-            }
-        }.setIterations(count).start();
+        MiniPerfTest miniPerf = new MiniPerfTest().setIterations(count).start((warmup, run) -> {
+            double lat = rand.nextDouble() * latDelta + bbox.minLat;
+            double lon = rand.nextDouble() * lonDelta + bbox.minLon;
+            return idx.findClosest(lat, lon, EdgeFilter.ALL_EDGES).getClosestNode();
+        });
 
         print("location_index", miniPerf);
     }
 
-    private void printMiscUnitPerfTests(final Graph graph, boolean isCH, final FlagEncoder encoder,
-                                        int count, final GHBitSet allowedEdges) {
+    private void measureGraphTraversal(final Graph graph, BooleanEncodedValue accessEnc, int count) {
         final Random rand = new Random(seed);
-        String description = "";
-        if (isCH) {
-            description = "CH";
-            CHGraph lg = (CHGraph) graph;
-            final CHEdgeExplorer chExplorer = lg.createEdgeExplorer(new LevelEdgeFilter(lg));
-            MiniPerfTest miniPerf = new MiniPerfTest() {
-                @Override
-                public int doCalc(boolean warmup, int run) {
-                    int nodeId = rand.nextInt(maxNode);
-                    return GHUtility.count(chExplorer.setBaseNode(nodeId));
-                }
-            }.setIterations(count).start();
-            print("unit_testsCH.level_edge_state_next", miniPerf);
 
-            final CHEdgeExplorer chExplorer2 = lg.createEdgeExplorer();
-            miniPerf = new MiniPerfTest() {
-                @Override
-                public int doCalc(boolean warmup, int run) {
-                    int nodeId = rand.nextInt(maxNode);
-                    CHEdgeIterator iter = chExplorer2.setBaseNode(nodeId);
-                    while (iter.next()) {
-                        if (iter.isShortcut())
-                            nodeId += (int) iter.getWeight();
-                    }
-                    return nodeId;
-                }
-            }.setIterations(count).start();
-            print("unit_testsCH.get_weight", miniPerf);
-        }
-
-        EdgeFilter outFilter = DefaultEdgeFilter.outEdges(encoder);
+        EdgeFilter outFilter = AccessFilter.outEdges(accessEnc);
         final EdgeExplorer outExplorer = graph.createEdgeExplorer(outFilter);
-        MiniPerfTest miniPerf = new MiniPerfTest() {
-            @Override
-            public int doCalc(boolean warmup, int run) {
-                int nodeId = rand.nextInt(maxNode);
-                return GHUtility.count(outExplorer.setBaseNode(nodeId));
-            }
-        }.setIterations(count).start();
-        print("unit_tests" + description + ".out_edge_state_next", miniPerf);
+        MiniPerfTest miniPerf = new MiniPerfTest().setIterations(count).start((warmup, run) -> {
+            int nodeId = rand.nextInt(maxNode);
+            return GHUtility.count(outExplorer.setBaseNode(nodeId));
+        });
+        print("unit_tests.out_edge_state_next", miniPerf);
 
         final EdgeExplorer allExplorer = graph.createEdgeExplorer();
-        miniPerf = new MiniPerfTest() {
-            @Override
-            public int doCalc(boolean warmup, int run) {
-                int nodeId = rand.nextInt(maxNode);
-                return GHUtility.count(allExplorer.setBaseNode(nodeId));
-            }
-        }.setIterations(count).start();
-        print("unit_tests" + description + ".all_edge_state_next", miniPerf);
+        miniPerf = new MiniPerfTest().setIterations(count).start((warmup, run) -> {
+            int nodeId = rand.nextInt(maxNode);
+            return GHUtility.count(allExplorer.setBaseNode(nodeId));
+        });
+        print("unit_tests.all_edge_state_next", miniPerf);
 
         final int maxEdgesId = graph.getAllEdges().length();
-        miniPerf = new MiniPerfTest() {
-            @Override
-            public int doCalc(boolean warmup, int run) {
-                while (true) {
-                    int edgeId = rand.nextInt(maxEdgesId);
-                    if (allowedEdges.contains(edgeId))
-                        return graph.getEdgeIteratorState(edgeId, Integer.MIN_VALUE).getEdge();
-                }
+        GHBitSet allowedEdges = getValidEdges(graph);
+        miniPerf = new MiniPerfTest().setIterations(count).start((warmup, run) -> {
+            while (true) {
+                int edgeId = rand.nextInt(maxEdgesId);
+                if (allowedEdges.contains(edgeId))
+                    return graph.getEdgeIteratorState(edgeId, Integer.MIN_VALUE).getEdge();
             }
-        }.setIterations(count).start();
-        print("unit_tests" + description + ".get_edge_state", miniPerf);
+        });
+        print("unit_tests.get_edge_state", miniPerf);
     }
 
-    private void printSpatialRuleLookupTest(String countryBordersDirectory, int count) {
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JtsModule());
-        objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+    private void measureGraphTraversalCH(final RoutingCHGraph lg, int count) {
+        final Random rand = new Random(seed);
+        final int maxEdgesId = lg.getEdges();
+        MiniPerfTest miniPerf = new MiniPerfTest().setIterations(count).start((warmup, run) -> {
+            int edgeId = rand.nextInt(maxEdgesId);
+            return lg.getEdgeIteratorState(edgeId, Integer.MIN_VALUE).getEdge();
+        });
+        print("unit_testsCH.get_edge_state", miniPerf);
 
-        List<JsonFeatureCollection> jsonFeatureCollections = new ArrayList<>();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get(countryBordersDirectory), "*.{geojson,json}")) {
-            for (Path borderFile : stream) {
-                try (BufferedReader reader = Files.newBufferedReader(borderFile, StandardCharsets.UTF_8)) {
-                    JsonFeatureCollection jsonFeatureCollection = objectMapper.readValue(reader, JsonFeatureCollection.class);
-                    jsonFeatureCollections.add(jsonFeatureCollection);
-                }
+        final RoutingCHEdgeExplorer chOutEdgeExplorer = lg.createOutEdgeExplorer();
+        miniPerf = new MiniPerfTest().setIterations(count).start((warmup, run) -> {
+            int nodeId = rand.nextInt(maxNode);
+            RoutingCHEdgeIterator iter = chOutEdgeExplorer.setBaseNode(nodeId);
+            while (iter.next()) {
+                nodeId += iter.getAdjNode();
             }
-        } catch (IOException e) {
-            logger.error("Failed to load borders.", e);
-            return;
-        }
+            return nodeId;
+        });
+        print("unit_testsCH.out_edge_next", miniPerf);
 
-        SpatialRuleFactory rulePerCountryFactory = (id, borders) -> new AbstractSpatialRule(borders) {
-            @Override
-            public String getId() {
-                return id;
+        miniPerf = new MiniPerfTest().setIterations(count).start((warmup, run) -> {
+            int nodeId = rand.nextInt(maxNode);
+            RoutingCHEdgeIterator iter = chOutEdgeExplorer.setBaseNode(nodeId);
+            while (iter.next()) {
+                nodeId += iter.getWeight(false);
             }
-        };
+            return nodeId;
+        });
+        print("unit_testsCH.out_edge_get_weight", miniPerf);
+    }
 
-        final SpatialRuleLookup spatialRuleLookup = SpatialRuleLookupBuilder.buildIndex(jsonFeatureCollections, "ISO_A3", rulePerCountryFactory);
+    private GHBitSet getValidEdges(Graph g) {
+        final GHBitSet result = new GHBitSetImpl(g.getAllEdges().length());
+        AllEdgesIterator iter = g.getAllEdges();
+        while (iter.next())
+            result.add(iter.getEdge());
+        return result;
+    }
 
-        // generate random points in central Europe
+    private void measureCountryAreaIndex(int count) {
+        AreaIndex<CustomArea> countryIndex = new AreaIndex<>(readCountries());
+        Random rnd = new Random(seed);
+        // generate random points in Europe
         final List<GHPoint> randomPoints = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            double lat = 46d + Math.random() * 7d;
-            double lon = 6d + Math.random() * 21d;
+            double lat = 36d + rnd.nextDouble() * 24d;
+            double lon = -14d + rnd.nextDouble() * 47d;
             randomPoints.add(new GHPoint(lat, lon));
         }
-
-        MiniPerfTest lookupPerfTest = new MiniPerfTest() {
-            @Override
-            public int doCalc(boolean warmup, int run) {
-                GHPoint point = randomPoints.get(run);
-                return spatialRuleLookup.lookupRules(point.lat, point.lon).getRules().size();
+        MiniPerfTest lookupPerfTest = new MiniPerfTest().setIterations(count).start((warmup, run) -> {
+            int checksum = 0;
+            for (int i = 0; i < 1_000; i++) {
+                GHPoint point = randomPoints.get(rnd.nextInt(randomPoints.size()));
+                checksum += countryIndex.query(point.lat, point.lon).size();
             }
-        }.setIterations(count).start();
-
-        print("spatialrulelookup", lookupPerfTest);
+            return checksum;
+        });
+        print("area_index.query", lookupPerfTest);
     }
 
-    private void compareRouting(final GraphHopper hopper, int count) {
-        logger.info("Comparing " + count + " routes. Differences will be printed to stderr.");
-        String algo = Algorithms.ASTAR_BI;
-        final Random rand = new Random(seed);
-        final Graph g = hopper.getGraphHopperStorage();
-        final NodeAccess na = g.getNodeAccess();
-
-        for (int i = 0; i < count; i++) {
-            int from = rand.nextInt(maxNode);
-            int to = rand.nextInt(maxNode);
-
-            double fromLat = na.getLatitude(from);
-            double fromLon = na.getLongitude(from);
-            double toLat = na.getLatitude(to);
-            double toLon = na.getLongitude(to);
-            GHRequest req = new GHRequest(fromLat, fromLon, toLat, toLon).
-                    setProfile("profile_no_tc").
-                    setAlgorithm(algo);
-
-            GHResponse lmRsp = hopper.route(req);
-            req.putHint(Landmark.DISABLE, true);
-            GHResponse originalRsp = hopper.route(req);
-
-            String locStr = " iteration " + i + ". " + fromLat + "," + fromLon + " -> " + toLat + "," + toLon;
-            if (lmRsp.hasErrors()) {
-                if (originalRsp.hasErrors())
-                    continue;
-                logger.error("Error for LM but not for original response " + locStr);
-            }
-
-            String infoStr = " weight:" + lmRsp.getBest().getRouteWeight() + ", original: " + originalRsp.getBest().getRouteWeight()
-                    + " distance:" + lmRsp.getBest().getDistance() + ", original: " + originalRsp.getBest().getDistance()
-                    + " time:" + round2(lmRsp.getBest().getTime() / 1000) + ", original: " + round2(originalRsp.getBest().getTime() / 1000)
-                    + " points:" + lmRsp.getBest().getPoints().size() + ", original: " + originalRsp.getBest().getPoints().size();
-
-            if (Math.abs(1 - lmRsp.getBest().getRouteWeight() / originalRsp.getBest().getRouteWeight()) > 0.000001)
-                logger.error("Too big weight difference for LM. " + locStr + infoStr);
-        }
-    }
-
-    private void compareCHWithAndWithoutSOD(final GraphHopper hopper, int count) {
-        logger.info("Comparing " + count + " routes for CH with and without stall on demand." +
-                " Differences will be printed to stderr.");
-        final Random rand = new Random(seed);
-        final Graph g = hopper.getGraphHopperStorage();
-        final NodeAccess na = g.getNodeAccess();
-
-        for (int i = 0; i < count; i++) {
-            int from = rand.nextInt(maxNode);
-            int to = rand.nextInt(maxNode);
-
-            double fromLat = na.getLatitude(from);
-            double fromLon = na.getLongitude(from);
-            double toLat = na.getLatitude(to);
-            double toLon = na.getLongitude(to);
-            GHRequest sodReq = new GHRequest(fromLat, fromLon, toLat, toLon).
-                    setProfile("profile_no_tc").
-                    setAlgorithm(DIJKSTRA_BI);
-
-            GHRequest noSodReq = new GHRequest(fromLat, fromLon, toLat, toLon).
-                    setProfile("profile_no_tc").
-                    setAlgorithm(DIJKSTRA_BI);
-            noSodReq.putHint("stall_on_demand", false);
-
-            GHResponse sodRsp = hopper.route(sodReq);
-            GHResponse noSodRsp = hopper.route(noSodReq);
-
-            String locStr = " iteration " + i + ". " + fromLat + "," + fromLon + " -> " + toLat + "," + toLon;
-            if (sodRsp.hasErrors()) {
-                if (noSodRsp.hasErrors()) {
-                    logger.info("Error with and without SOD");
-                    continue;
-                } else {
-                    logger.error("Error with SOD but not without SOD" + locStr);
-                    continue;
-                }
-            }
-            String infoStr =
-                    " weight:" + noSodRsp.getBest().getRouteWeight() + ", original: " + sodRsp.getBest().getRouteWeight()
-                            + " distance:" + noSodRsp.getBest().getDistance() + ", original: " + sodRsp.getBest().getDistance()
-                            + " time:" + round2(noSodRsp.getBest().getTime() / 1000) + ", original: " + round2(sodRsp.getBest().getTime() / 1000)
-                            + " points:" + noSodRsp.getBest().getPoints().size() + ", original: " + sodRsp.getBest().getPoints().size();
-
-            if (Math.abs(1 - noSodRsp.getBest().getRouteWeight() / sodRsp.getBest().getRouteWeight()) > 0.000001)
-                logger.error("Too big weight difference for SOD. " + locStr + infoStr);
-        }
-    }
-
-    private void printTimeOfRouteQuery(final GraphHopper hopper, final QuerySettings querySettings) {
-        final Graph g = hopper.getGraphHopperStorage();
+    private void measureRouting(final GraphHopper hopper, final QuerySettings querySettings) {
+        final Graph g = hopper.getBaseGraph();
         final AtomicLong maxDistance = new AtomicLong(0);
         final AtomicLong minDistance = new AtomicLong(Long.MAX_VALUE);
         final AtomicLong distSum = new AtomicLong(0);
@@ -654,128 +524,114 @@ public class Measurement {
         final AtomicInteger failedCount = new AtomicInteger(0);
         final DistanceCalc distCalc = new DistanceCalcEarth();
 
-        final EdgeFilter edgeFilter = DefaultEdgeFilter.allEdges(hopper.getEncodingManager().getEncoder(vehicle));
+        String profileName = querySettings.edgeBased ? "profile_tc" : "profile_no_tc";
+        Weighting weighting = hopper.createWeighting(hopper.getProfile(profileName), new PMap());
+        final EdgeFilter edgeFilter = new DefaultSnapFilter(weighting, hopper.getEncodingManager().getBooleanEncodedValue(Subnetwork.key(profileName)));
         final EdgeExplorer edgeExplorer = g.createEdgeExplorer(edgeFilter);
         final AtomicLong visitedNodesSum = new AtomicLong(0);
         final AtomicLong maxVisitedNodes = new AtomicLong(0);
-//        final AtomicLong extractTimeSum = new AtomicLong(0);
-//        final AtomicLong calcPointsTimeSum = new AtomicLong(0);
-//        final AtomicLong calcDistTimeSum = new AtomicLong(0);
-//        final AtomicLong tmpDist = new AtomicLong(0);
         final Random rand = new Random(seed);
         final NodeAccess na = g.getNodeAccess();
 
-        MiniPerfTest miniPerf = new MiniPerfTest() {
-            @Override
-            public int doCalc(boolean warmup, int run) {
-                int from = -1, to = -1;
-                double fromLat = 0, fromLon = 0, toLat = 0, toLon = 0;
-                GHRequest req = null;
-                for (int i = 0; i < 5; i++) {
-                    from = rand.nextInt(maxNode);
-                    to = rand.nextInt(maxNode);
-                    fromLat = na.getLatitude(from);
-                    fromLon = na.getLongitude(from);
-                    toLat = na.getLatitude(to);
-                    toLon = na.getLongitude(to);
-                    req = new GHRequest(fromLat, fromLon, toLat, toLon);
-                    req.setProfile(querySettings.edgeBased ? "profile_tc" : "profile_no_tc");
-                    if (querySettings.blockArea == null)
-                        break;
+        MiniPerfTest miniPerf = new MiniPerfTest().setIterations(querySettings.count).start((warmup, run) -> {
+            GHRequest req = new GHRequest(querySettings.points);
+            IntArrayList nodes = new IntArrayList(querySettings.points);
+            List<GHPoint> points = new ArrayList<>();
+            List<String> pointHints = new ArrayList<>();
+            int tries = 0;
+            while (nodes.size() < querySettings.points) {
+                int node = rand.nextInt(maxNode);
+                if (++tries > g.getNodes())
+                    throw new RuntimeException("Could not find accessible points");
+                // probe location. it could be a pedestrian area or an edge removed in the subnetwork removal process
+                if (GHUtility.count(edgeExplorer.setBaseNode(node)) == 0)
+                    continue;
+                nodes.add(node);
+                points.add(new GHPoint(na.getLat(node), na.getLon(node)));
+                if (querySettings.withPointHints) {
+                    // we add some point hint to make sure the name similarity filter has to do some actual work
+                    pointHints.add("probably_not_found");
+                }
+            }
+            req.setPoints(points);
+            req.setPointHints(pointHints);
+            req.setProfile(profileName);
+            req.getHints().
+                    putObject(CH.DISABLE, !querySettings.ch).
+                    putObject("stall_on_demand", querySettings.sod).
+                    putObject(Landmark.DISABLE, !querySettings.lm).
+                    putObject(Landmark.ACTIVE_COUNT, querySettings.activeLandmarks).
+                    putObject("instructions", querySettings.withInstructions);
 
-                    try {
-                        req.getHints().putObject(BLOCK_AREA, querySettings.blockArea);
-                        GraphEdgeIdFinder.createBlockArea(hopper.getGraphHopperStorage(), hopper.getLocationIndex(), req.getPoints(), req.getHints(), edgeFilter);
-                        break;
-                    } catch (IllegalArgumentException ex) {
-                        if (i >= 4)
-                            throw new RuntimeException("Give up after 5 trials. Cannot find points outside of the block_area "
-                                    + querySettings.blockArea + " - too big block_area or map too small? Request:" + req);
-                    }
+            if (querySettings.alternative)
+                req.setAlgorithm(ALT_ROUTE);
+
+            if (querySettings.pathDetails)
+                req.setPathDetails(Arrays.asList(Parameters.Details.AVERAGE_SPEED, Parameters.Details.EDGE_ID, Parameters.Details.STREET_NAME));
+
+            if (!querySettings.simplify)
+                req.getHints().putObject(Parameters.Routing.WAY_POINT_MAX_DISTANCE, 0);
+
+            GHResponse rsp;
+            try {
+                rsp = hopper.route(req);
+            } catch (Exception ex) {
+                // 'not found' can happen if import creates more than one subnetwork
+                throw new RuntimeException("Error while calculating route! nodes: " + nodes + ", request:" + req, ex);
+            }
+
+            if (rsp.hasErrors()) {
+                if (!warmup)
+                    failedCount.incrementAndGet();
+
+                if (rsp.getErrors().get(0).getMessage() == null)
+                    rsp.getErrors().get(0).printStackTrace();
+                else if (!toLowerCase(rsp.getErrors().get(0).getMessage()).contains("not found")) {
+                    if (stopOnError)
+                        throw new RuntimeException("errors should NOT happen in Measurement! " + req + " => " + rsp.getErrors());
+                    else
+                        logger.error("errors should NOT happen in Measurement! " + req + " => " + rsp.getErrors());
+                }
+                return 0;
+            }
+
+            ResponsePath responsePath = rsp.getBest();
+            if (!warmup) {
+                long visitedNodes = rsp.getHints().getLong("visited_nodes.sum", 0);
+                visitedNodesSum.addAndGet(visitedNodes);
+                if (visitedNodes > maxVisitedNodes.get()) {
+                    maxVisitedNodes.set(visitedNodes);
                 }
 
-                req.getHints().
-                        putObject(CH.DISABLE, !querySettings.ch).
-                        putObject("stall_on_demand", querySettings.sod).
-                        putObject(Landmark.DISABLE, !querySettings.lm).
-                        putObject(Landmark.ACTIVE_COUNT, querySettings.activeLandmarks).
-                        putObject("instructions", querySettings.withInstructions);
+                rsp.getAll().forEach(p -> {
+                    long dist = (long) p.getDistance();
+                    distSum.addAndGet(dist);
+                });
+
+                long dist = (long) responsePath.getDistance();
+
+                GHPoint prev = req.getPoints().get(0);
+                for (GHPoint point : req.getPoints()) {
+                    airDistSum.addAndGet((long) distCalc.calcDist(prev.getLat(), prev.getLon(), point.getLat(), point.getLon()));
+                    prev = point;
+                }
+
+                if (dist > maxDistance.get())
+                    maxDistance.set(dist);
+
+                if (dist < minDistance.get())
+                    minDistance.set(dist);
 
                 if (querySettings.alternative)
-                    req.setAlgorithm(ALT_ROUTE);
-
-                if (querySettings.withInstructions)
-                    req.setPathDetails(Arrays.asList(Parameters.Details.AVERAGE_SPEED));
-
-                if (querySettings.simplify) {
-                    req.setPathDetails(Arrays.asList(Parameters.Details.AVERAGE_SPEED, Parameters.Details.EDGE_ID, Parameters.Details.STREET_NAME));
-                } else {
-                    // disable path simplification by setting the distance to zero
-                    req.getHints().putObject(Parameters.Routing.WAY_POINT_MAX_DISTANCE, 0);
-                }
-
-                if (querySettings.withPointHints) {
-                    EdgeIterator iter = edgeExplorer.setBaseNode(from);
-                    if (!iter.next())
-                        throw new IllegalArgumentException("wrong 'from' when adding point hint");
-                    EdgeIterator iter2 = edgeExplorer.setBaseNode(to);
-                    if (!iter2.next())
-                        throw new IllegalArgumentException("wrong 'to' when adding point hint");
-                    req.setPointHints(Arrays.asList(iter.getName(), iter2.getName()));
-                }
-
-                // put(algo + ".approximation", "BeelineSimplification").
-                // put(algo + ".epsilon", 2);
-
-                GHResponse rsp;
-                try {
-                    rsp = hopper.route(req);
-                } catch (Exception ex) {
-                    // 'not found' can happen if import creates more than one subnetwork
-                    throw new RuntimeException("Error while calculating route! "
-                            + "nodes:" + from + " -> " + to + ", request:" + req, ex);
-                }
-
-                if (rsp.hasErrors()) {
-                    if (!warmup)
-                        failedCount.incrementAndGet();
-
-                    if (rsp.getErrors().get(0).getMessage() == null)
-                        rsp.getErrors().get(0).printStackTrace();
-                    else if (!toLowerCase(rsp.getErrors().get(0).getMessage()).contains("not found"))
-                        logger.error("errors should NOT happen in Measurement! " + req + " => " + rsp.getErrors());
-
-                    return 0;
-                }
-
-                ResponsePath responsePath = rsp.getBest();
-                if (!warmup) {
-                    long visitedNodes = rsp.getHints().getLong("visited_nodes.sum", 0);
-                    visitedNodesSum.addAndGet(visitedNodes);
-                    if (visitedNodes > maxVisitedNodes.get()) {
-                        maxVisitedNodes.set(visitedNodes);
-                    }
-
-                    long dist = (long) responsePath.getDistance();
-                    distSum.addAndGet(dist);
-
-                    airDistSum.addAndGet((long) distCalc.calcDist(fromLat, fromLon, toLat, toLon));
-
-                    if (dist > maxDistance.get())
-                        maxDistance.set(dist);
-
-                    if (dist < minDistance.get())
-                        minDistance.set(dist);
-
-                    if (querySettings.alternative)
-                        altCount.addAndGet(rsp.getAll().size());
-                }
-
-                return responsePath.getPoints().getSize();
+                    altCount.addAndGet(rsp.getAll().size());
             }
-        }.setIterations(querySettings.count).start();
+
+            return responsePath.getPoints().size();
+        });
 
         int count = querySettings.count - failedCount.get();
+        if (count == 0)
+            throw new RuntimeException("All requests failed, something must be wrong: " + failedCount.get());
 
         // if using non-bidirectional algorithm make sure you exclude CH routing
         String algoStr = (querySettings.ch && !querySettings.edgeBased) ? Algorithms.DIJKSTRA_BI : Algorithms.ASTAR_BI;
@@ -843,9 +699,9 @@ public class Measurement {
     }
 
     private CustomModel loadCustomModel(String customModelLocation) {
-        ObjectMapper yamlOM = Jackson.initObjectMapper(new ObjectMapper(new YAMLFactory()));
+        ObjectMapper om = Jackson.initObjectMapper(new ObjectMapper());
         try {
-            return yamlOM.readValue(new File(customModelLocation), CustomModel.class);
+            return om.readValue(Helper.readJSONFileWithoutComments(customModelLocation), CustomModel.class);
         } catch (Exception e) {
             throw new RuntimeException("Cannot load custom_model from " + customModelLocation, e);
         }
@@ -954,5 +810,25 @@ public class Measurement {
 
     private int getSummaryColumnWidth(String p) {
         return Math.max(10, p.length());
+    }
+
+    private static void gcAndWait() {
+        long before = getTotalGcCount();
+        // trigger gc
+        System.gc();
+        while (getTotalGcCount() == before) {
+            // wait for the gc to have completed
+        }
+    }
+
+    private static long getTotalGcCount() {
+        long sum = 0;
+        for (GarbageCollectorMXBean b : ManagementFactory.getGarbageCollectorMXBeans()) {
+            long count = b.getCollectionCount();
+            if (count != -1) {
+                sum += count;
+            }
+        }
+        return sum;
     }
 }

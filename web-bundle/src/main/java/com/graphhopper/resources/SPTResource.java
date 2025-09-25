@@ -3,18 +3,18 @@ package com.graphhopper.resources;
 import com.graphhopper.GraphHopper;
 import com.graphhopper.config.Profile;
 import com.graphhopper.http.GHPointParam;
+import com.graphhopper.http.ProfileResolver;
 import com.graphhopper.isochrone.algorithm.ShortestPathTree;
-import com.graphhopper.routing.ProfileResolver;
 import com.graphhopper.routing.ev.*;
 import com.graphhopper.routing.querygraph.QueryGraph;
-import com.graphhopper.routing.util.*;
-import com.graphhopper.routing.weighting.BlockAreaWeighting;
+import com.graphhopper.routing.util.DefaultSnapFilter;
+import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.Weighting;
-import com.graphhopper.storage.Graph;
-import com.graphhopper.storage.GraphEdgeIdFinder;
+import com.graphhopper.storage.BaseGraph;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.storage.index.LocationIndex;
-import com.graphhopper.storage.index.QueryResult;
+import com.graphhopper.storage.index.Snap;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.GHPoint;
 import io.dropwizard.jersey.params.LongParam;
@@ -34,9 +34,10 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.util.*;
 
-import static com.graphhopper.resources.RouteResource.errorIfLegacyParameters;
+import static com.graphhopper.resources.RouteResource.removeLegacyParameters;
 import static com.graphhopper.routing.util.TraversalMode.EDGE_BASED;
 import static com.graphhopper.routing.util.TraversalMode.NODE_BASED;
+import static com.graphhopper.util.Parameters.Details.STREET_NAME;
 
 /**
  * This resource provides the entire shortest path tree as response. In a simple CSV format discussed at #1577.
@@ -66,7 +67,7 @@ public class SPTResource {
     }
 
     // Annotating this as application/json because errors come out as json, and
-    // IllegalArgumentExceptions are not mapped to a fixed mediatype, because in RouteRessource, it could be GPX.
+    // IllegalArgumentExceptions are not mapped to a fixed mediatype, because in RouteResource, it could be GPX.
     @GET
     @Produces({"text/csv", "application/json"})
     public Response doGet(
@@ -75,46 +76,39 @@ public class SPTResource {
             @QueryParam("reverse_flow") @DefaultValue("false") boolean reverseFlow,
             @QueryParam("point") @NotNull GHPointParam point,
             @QueryParam("columns") String columnsParam,
-            @QueryParam("time_limit") @DefaultValue("600") LongParam timeLimitInSeconds,
-            @QueryParam("distance_limit") @DefaultValue("-1") LongParam distanceInMeter) {
+            @QueryParam("time_limit") @DefaultValue("600") OptionalLong timeLimitInSeconds,
+            @QueryParam("distance_limit") @DefaultValue("-1") OptionalLong distanceInMeter) {
         StopWatch sw = new StopWatch().start();
         PMap hintsMap = new PMap();
         RouteResource.initHints(hintsMap, uriInfo.getQueryParameters());
         hintsMap.putObject(Parameters.CH.DISABLE, true);
         hintsMap.putObject(Parameters.Landmark.DISABLE, true);
-        if (Helper.isEmpty(profileName)) {
-            profileName = profileResolver.resolveProfile(hintsMap).getName();
-            hintsMap.remove("weighting");
-            hintsMap.remove("vehicle");
-        }
-        errorIfLegacyParameters(hintsMap);
+
+        PMap profileResolverHints = new PMap(hintsMap);
+        profileResolverHints.putObject("profile", profileName);
+        profileName = profileResolver.resolveProfile(profileResolverHints);
+        removeLegacyParameters(hintsMap);
+
         Profile profile = graphHopper.getProfile(profileName);
-        if (profile == null) {
+        if (profile == null)
             throw new IllegalArgumentException("The requested profile '" + profileName + "' does not exist");
-        }
-        FlagEncoder encoder = encodingManager.getEncoder(profile.getVehicle());
-        EdgeFilter edgeFilter = DefaultEdgeFilter.allEdges(encoder);
         LocationIndex locationIndex = graphHopper.getLocationIndex();
-        QueryResult qr = locationIndex.findClosest(point.get().lat, point.get().lon, edgeFilter);
-        if (!qr.isValid())
-            throw new IllegalArgumentException("Point not found:" + point);
-
-        Graph graph = graphHopper.getGraphHopperStorage();
-        QueryGraph queryGraph = QueryGraph.create(graph, qr);
-        NodeAccess nodeAccess = queryGraph.getNodeAccess();
-
+        BaseGraph graph = graphHopper.getBaseGraph();
         Weighting weighting = graphHopper.createWeighting(profile, hintsMap);
-        if (hintsMap.has(Parameters.Routing.BLOCK_AREA))
-            weighting = new BlockAreaWeighting(weighting, GraphEdgeIdFinder.createBlockArea(graph, locationIndex,
-                    Collections.singletonList(point.get()), hintsMap, DefaultEdgeFilter.allEdges(encoder)));
+        BooleanEncodedValue inSubnetworkEnc = graphHopper.getEncodingManager().getBooleanEncodedValue(Subnetwork.key(profileName));
+        Snap snap = locationIndex.findClosest(point.get().lat, point.get().lon, new DefaultSnapFilter(weighting, inSubnetworkEnc));
+        if (!snap.isValid())
+            throw new IllegalArgumentException("Point not found:" + point);
+        QueryGraph queryGraph = QueryGraph.create(graph, snap);
+        NodeAccess nodeAccess = queryGraph.getNodeAccess();
         TraversalMode traversalMode = profile.isTurnCosts() ? EDGE_BASED : NODE_BASED;
-        ShortestPathTree shortestPathTree = new ShortestPathTree(queryGraph, weighting, reverseFlow, traversalMode);
+        ShortestPathTree shortestPathTree = new ShortestPathTree(queryGraph, queryGraph.wrapWeighting(weighting), reverseFlow, traversalMode);
 
-        if (distanceInMeter.get() > 0) {
-            shortestPathTree.setDistanceLimit(distanceInMeter.get() + Math.max(distanceInMeter.get() * 0.14, 2_000));
+        if (distanceInMeter.orElseThrow(() -> new IllegalArgumentException("query param distance_limit is not a number.")) > 0) {
+            shortestPathTree.setDistanceLimit(distanceInMeter.getAsLong());
         } else {
-            double limit = timeLimitInSeconds.get() * 1000;
-            shortestPathTree.setTimeLimit(limit + Math.max(limit * 0.14, 200_000));
+            double limit = timeLimitInSeconds.orElseThrow(() -> new IllegalArgumentException("query param time_limit is not a number.")) * 1000d;
+            shortestPathTree.setTimeLimit(limit);
         }
 
         final String COL_SEP = ",", LINE_SEP = "\n";
@@ -143,7 +137,7 @@ public class SPTResource {
                 }
                 sb.append(LINE_SEP);
                 writer.write(sb.toString());
-                shortestPathTree.search(qr.getClosestNode(), l -> {
+                shortestPathTree.search(snap.getClosestNode(), l -> {
                     IsoLabelWithCoordinates label = isoLabelWithCoordinates(nodeAccess, l);
                     sb.setLength(0);
                     for (int colIndex = 0; colIndex < columns.size(); colIndex++) {
@@ -177,16 +171,16 @@ public class SPTResource {
                                 sb.append(label.prevCoordinate == null ? 0 : label.prevTimeMillis);
                                 continue;
                             case "longitude":
-                                sb.append(label.coordinate.lon);
+                                sb.append(Helper.round6(label.coordinate.lon));
                                 continue;
                             case "prev_longitude":
-                                sb.append(label.prevCoordinate == null ? null : label.prevCoordinate.lon);
+                                sb.append(label.prevCoordinate == null ? null : Helper.round6(label.prevCoordinate.lon));
                                 continue;
                             case "latitude":
-                                sb.append(label.coordinate.lat);
+                                sb.append(Helper.round6(label.coordinate.lat));
                                 continue;
                             case "prev_latitude":
-                                sb.append(label.prevCoordinate == null ? null : label.prevCoordinate.lat);
+                                sb.append(label.prevCoordinate == null ? null : Helper.round6(label.prevCoordinate.lat));
                                 continue;
                         }
 
@@ -197,7 +191,7 @@ public class SPTResource {
                         if (edge == null)
                             continue;
 
-                        if (col.equals(Parameters.Details.STREET_NAME)) {
+                        if (col.equals(STREET_NAME)) {
                             sb.append(edge.getName().replaceAll(",", ""));
                             continue;
                         }
@@ -237,8 +231,8 @@ public class SPTResource {
     }
 
     private IsoLabelWithCoordinates isoLabelWithCoordinates(NodeAccess na, ShortestPathTree.IsoLabel label) {
-        double lat = na.getLatitude(label.node);
-        double lon = na.getLongitude(label.node);
+        double lat = na.getLat(label.node);
+        double lon = na.getLon(label.node);
         IsoLabelWithCoordinates isoLabelWC = new IsoLabelWithCoordinates();
         isoLabelWC.nodeId = label.node;
         isoLabelWC.coordinate = new GHPoint(lat, lon);
@@ -248,8 +242,8 @@ public class SPTResource {
         if (label.parent != null) {
             ShortestPathTree.IsoLabel prevLabel = label.parent;
             int prevNodeId = prevLabel.node;
-            double prevLat = na.getLatitude(prevNodeId);
-            double prevLon = na.getLongitude(prevNodeId);
+            double prevLat = na.getLat(prevNodeId);
+            double prevLon = na.getLon(prevNodeId);
             isoLabelWC.prevNodeId = prevNodeId;
             isoLabelWC.prevEdgeId = prevLabel.edge;
             isoLabelWC.prevCoordinate = new GHPoint(prevLat, prevLon);

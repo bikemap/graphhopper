@@ -20,17 +20,16 @@ package com.graphhopper.routing.ev;
 import com.graphhopper.util.Helper;
 
 /**
- * This enum defines the toll value like NO (default), ALL (all vehicles) and HGV (toll for heavy goods vehicles)
+ * This enum defines the toll value like MISSING (default), NO (no toll), HGV
+ * (toll for heavy goods vehicles) and ALL (all vehicles)
  */
 public enum Toll {
-    NO("no"), ALL("all"), HGV("hgv");
+    MISSING, NO, HGV, ALL;
 
     public static final String KEY = "toll";
 
-    private final String name;
-
-    Toll(String name) {
-        this.name = name;
+    public static EnumEncodedValue<Toll> create() {
+        return new EnumEncodedValue<>(KEY, Toll.class);
     }
 
     public static Toll find(String name) {
@@ -45,6 +44,6 @@ public enum Toll {
 
     @Override
     public String toString() {
-        return name;
+        return Helper.toLowerCase(super.toString());
     }
 }

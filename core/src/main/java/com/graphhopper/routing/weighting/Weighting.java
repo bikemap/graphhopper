@@ -17,12 +17,10 @@
  */
 package com.graphhopper.routing.weighting;
 
-import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.util.EdgeIteratorState;
 
 /**
- * Specifies how the best route is calculated. E.g. the fastest or shortest route.
- * <p>
+ * Specifies how the best route is calculated.
  *
  * @author Peter Karich
  */
@@ -51,7 +49,7 @@ public interface Weighting {
     double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse);
 
     /**
-     * This method calculates the time taken (in milli seconds) to travel along the specified edgeState.
+     * This method calculates the time taken (in milliseconds) to travel along the specified edgeState.
      * It is typically used for post-processing and on only a few thousand edges.
      */
     long calcEdgeMillis(EdgeIteratorState edgeState, boolean reverse);
@@ -66,8 +64,6 @@ public interface Weighting {
      * wrong results when turn costs are applied while running node-based.
      */
     boolean hasTurnCosts();
-
-    FlagEncoder getFlagEncoder();
 
     String getName();
 

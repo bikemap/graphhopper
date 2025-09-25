@@ -17,9 +17,6 @@
  */
 package com.graphhopper.util;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.Locale;
@@ -27,28 +24,31 @@ import java.util.Locale;
 /**
  * @author Peter Karich
  */
-public abstract class MiniPerfTest {
+public class MiniPerfTest {
 
-    private static final double NS_PER_S  = 1e9;
+    private static final double NS_PER_S = 1e9;
     private static final double NS_PER_MS = 1e6;
     private static final double NS_PER_US = 1e3;
-    
-    protected Logger logger = LoggerFactory.getLogger(getClass());
+
     private int counts = 100;
     private long fullTime = 0;
     private long max;
     private long min = Long.MAX_VALUE;
     private int dummySum;
 
-    public MiniPerfTest start() {
+    /**
+     * Important: Make sure to use the dummy sum in your program somewhere such that it's calculation cannot be skipped
+     * by the JVM. Either use {@link #getDummySum()} or {@link #getReport()} after running this method.
+     */
+    public MiniPerfTest start(Task m) {
         int warmupCount = Math.max(1, counts / 3);
         for (int i = 0; i < warmupCount; i++) {
-            dummySum += doCalc(true, i);
+            dummySum += m.doCalc(true, i);
         }
         long startFull = System.nanoTime();
         for (int i = 0; i < counts; i++) {
             long start = System.nanoTime();
-            dummySum += doCalc(false, i);
+            dummySum += m.doCalc(false, i);
             long time = System.nanoTime() - start;
             if (time < min)
                 min = time;
@@ -57,8 +57,16 @@ public abstract class MiniPerfTest {
                 max = time;
         }
         fullTime = System.nanoTime() - startFull;
-        logger.info("dummySum:" + dummySum);
         return this;
+    }
+
+    public interface Task {
+
+        /**
+         * @return return some integer as result from your processing to make sure that the JVM cannot
+         * optimize (away) the call or within the call something.
+         */
+        int doCalc(boolean warmup, int run);
     }
 
     public MiniPerfTest setIterations(int counts) {
@@ -93,7 +101,7 @@ public abstract class MiniPerfTest {
     public double getMean() {
         return getSum() / counts;
     }
-    
+
     private String formatDuration(double durationNs) {
         double divisor;
         String unit;
@@ -105,14 +113,14 @@ public abstract class MiniPerfTest {
             unit = "ms";
         } else {
             divisor = NS_PER_US;
-            unit = "us";
+            unit = "µs";
         }
         return nf(durationNs / divisor) + unit;
     }
 
     public String getReport() {
         double meanNs = ((double) fullTime) / counts;
-        return "sum:" + formatDuration(fullTime) + ", time/call:" + formatDuration(meanNs);
+        return "sum:" + formatDuration(fullTime) + ", time/call:" + formatDuration(meanNs) + ", dummy: " + dummySum;
     }
 
     public int getDummySum() {
@@ -122,10 +130,4 @@ public abstract class MiniPerfTest {
     private String nf(Number num) {
         return new DecimalFormat("#.###", DecimalFormatSymbols.getInstance(Locale.ROOT)).format(num);
     }
-
-    /**
-     * @return return some integer as result from your processing to make sure that the JVM cannot
-     * optimize (away) the call or within the call something.
-     */
-    public abstract int doCalc(boolean warmup, int run);
 }

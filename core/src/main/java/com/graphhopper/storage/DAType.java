@@ -74,6 +74,8 @@ public class DAType {
         DAType type;
         if (dataAccess.contains("SYNC"))
             throw new IllegalArgumentException("SYNC option is no longer supported, see #982");
+        else if (dataAccess.contains("MMAP_RO"))
+            type = DAType.MMAP_RO;
         else if (dataAccess.contains("MMAP"))
             type = DAType.MMAP;
         else if (dataAccess.contains("UNSAFE"))
@@ -82,15 +84,6 @@ public class DAType {
             type = DAType.RAM_STORE;
         else
             type = DAType.RAM;
-        return type;
-    }
-
-    /**
-     * This method returns RAM_INT if the specified type is in-memory.
-     */
-    public static DAType getPreferredInt(DAType type) {
-        if (type.isInMemory())
-            return type.isStoring() ? RAM_INT_STORE : RAM_INT;
         return type;
     }
 

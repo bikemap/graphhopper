@@ -17,7 +17,6 @@
  */
 package com.graphhopper.reader.dem;
 
-import com.graphhopper.util.Helper;
 import org.apache.xmlgraphics.image.codec.tiff.TIFFDecodeParam;
 import org.apache.xmlgraphics.image.codec.tiff.TIFFImageDecoder;
 import org.apache.xmlgraphics.image.codec.util.SeekableStream;
@@ -140,7 +139,7 @@ public class GMTEDProvider extends AbstractTiffElevationProvider {
     }
 
     @Override
-    Raster generateRasterFromFile(File file, String tifName) {
+    Raster readFile(File file, String tifName) {
         SeekableStream ss = null;
         try {
             InputStream is = new FileInputStream(file);

@@ -17,31 +17,33 @@
  */
 package com.graphhopper.routing.util;
 
-import com.graphhopper.storage.Graph;
-import com.graphhopper.storage.GraphBuilder;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValueImpl;
+import com.graphhopper.routing.ev.SimpleBooleanEncodedValue;
+import com.graphhopper.search.KVStorage;
+import com.graphhopper.storage.BaseGraph;
 import com.graphhopper.storage.NodeAccess;
 import com.graphhopper.util.EdgeIteratorState;
-import com.graphhopper.util.FetchMode;
-import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.PointList;
 import com.graphhopper.util.shapes.GHPoint;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static junit.framework.TestCase.assertFalse;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static com.graphhopper.search.KVStorage.KeyValue.STREET_NAME;
+import static com.graphhopper.search.KVStorage.KeyValue.createKV;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author Robin Boldt
  */
 public class NameSimilarityEdgeFilterTest {
 
-    private GHPoint basePoint = new GHPoint(49.4652132, 11.1435159);
+    private final GHPoint basePoint = new GHPoint(49.4652132, 11.1435159);
 
     @Test
     public void testAccept() {
         EdgeFilter edgeFilter = createNameSimilarityEdgeFilter("Laufamholzstraße 154 Nürnberg");
         EdgeIteratorState edge = createTestEdgeIterator("Laufamholzstraße, ST1333");
+        edge.getName();
         assertTrue(edgeFilter.accept(edge));
 
         edge = createTestEdgeIterator("Hauptstraße");
@@ -87,8 +89,7 @@ public class NameSimilarityEdgeFilterTest {
 
     @Test
     public void testDistanceFiltering() {
-        CarFlagEncoder encoder = new CarFlagEncoder();
-        Graph g = new GraphBuilder(EncodingManager.create(encoder)).create();
+        BaseGraph g = new BaseGraph.Builder(1).create();
         NodeAccess na = g.getNodeAccess();
 
         GHPoint pointFarAway = new GHPoint(49.458629, 11.146124);
@@ -104,11 +105,11 @@ public class NameSimilarityEdgeFilterTest {
         na.setNode(nodeID200, point200mAway.lat, point200mAway.lon);
 
         // Check that it matches a street 50m away
-        EdgeIteratorState edge1 = g.edge(nodeId50, farAwayId).setName("Wentworth Street");
+        EdgeIteratorState edge1 = g.edge(nodeId50, farAwayId).setKeyValues(createKV(STREET_NAME, "Wentworth Street"));
         assertTrue(createNameSimilarityEdgeFilter("Wentworth Street").accept(edge1));
 
         // Check that it doesn't match streets 200m away
-        EdgeIteratorState edge2 = g.edge(nodeID200, farAwayId).setName("Wentworth Street");
+        EdgeIteratorState edge2 = g.edge(nodeID200, farAwayId).setKeyValues(createKV(STREET_NAME, "Wentworth Street"));
         assertFalse(createNameSimilarityEdgeFilter("Wentworth Street").accept(edge2));
     }
 
@@ -232,42 +233,85 @@ public class NameSimilarityEdgeFilterTest {
      * so distance is not used when matching
      */
     private NameSimilarityEdgeFilter createNameSimilarityEdgeFilter(String pointHint) {
-        return new NameSimilarityEdgeFilter(new EdgeFilter() {
-            @Override
-            public boolean accept(EdgeIteratorState edgeState) {
-                return true;
-            }
-        }, pointHint, basePoint, 100);
+        return new NameSimilarityEdgeFilter(edgeState -> true, pointHint, basePoint, 100);
     }
 
-    private EdgeIteratorState createTestEdgeIterator(final String name, final int baseNodeId, final int adjNodeId) {
-        return new GHUtility.DisabledEdgeIterator() {
-            @Override
-            public String getName() {
-                return name;
-            }
+    @Test
+    public void curvedWayGeometry_issue2319() {
+        // 0 - 1
+        // |   |
+        // |   |
+        // -----
+        //
+        //    2 -- 3
+        SimpleBooleanEncodedValue accessEnc = new SimpleBooleanEncodedValue("access", true);
+        DecimalEncodedValue speedEnc = new DecimalEncodedValueImpl("speed", 5, 5, true);
+        EncodingManager em = EncodingManager.start().add(accessEnc).add(speedEnc).build();
+        BaseGraph graph = new BaseGraph.Builder(em).create();
+        PointList pointList = new PointList(20, false);
+        pointList.add(43.844377, -79.264005);
+        pointList.add(43.843771, -79.263824);
+        pointList.add(43.843743, -79.2638);
+        pointList.add(43.843725, -79.26375);
+        pointList.add(43.843724, -79.263676);
+        pointList.add(43.843801, -79.263412);
+        pointList.add(43.843866, -79.263);
+        pointList.add(43.843873, -79.262838);
+        pointList.add(43.843863, -79.262801);
+        pointList.add(43.843781, -79.262729);
+        pointList.add(43.842408, -79.262395);
+        pointList.add(43.842363, -79.262397);
+        pointList.add(43.842336, -79.262422);
+        pointList.add(43.842168, -79.263186);
+        pointList.add(43.842152, -79.263348);
+        pointList.add(43.842225, -79.263421);
+        pointList.add(43.842379, -79.263441);
+        pointList.add(43.842668, -79.26352);
+        pointList.add(43.842777, -79.263566);
+        pointList.add(43.842832, -79.263627);
+        pointList.add(43.842833, -79.263739);
+        pointList.add(43.842807, -79.263802);
+        pointList.add(43.842691, -79.264477);
+        pointList.add(43.842711, -79.264588);
+        graph.getNodeAccess().setNode(0, 43.844521, -79.263976);
+        graph.getNodeAccess().setNode(1, 43.842775, -79.264649);
 
-            @Override
-            public int getBaseNode() {
-                return baseNodeId;
-            }
+        EdgeIteratorState doubtfire = graph.edge(0, 1).setWayGeometry(pointList).set(accessEnc, true, true).
+                set(speedEnc, 60, 60).setKeyValues(createKV(STREET_NAME, "Doubtfire Crescent"));
+        EdgeIteratorState golden = graph.edge(0, 1).set(accessEnc, true, true).set(speedEnc, 60, 60).
+                setKeyValues(createKV(STREET_NAME, "Golden Avenue"));
 
-            @Override
-            public int getAdjNode() {
-                return adjNodeId;
-            }
+        graph.getNodeAccess().setNode(2, 43.841501560244744, -79.26366394602502);
+        graph.getNodeAccess().setNode(3, 43.842247922172724, -79.2605663670726);
+        PointList pointList2 = new PointList(1, false);
+        pointList2.add(43.84191413615452, -79.261912128223);
+        EdgeIteratorState denison = graph.edge(2, 3).setWayGeometry(pointList2).set(accessEnc, true, true).
+                set(speedEnc, 60, 60).setKeyValues(createKV(STREET_NAME, "Denison Street"));
+        double qlat = 43.842122;
+        double qLon = -79.262162;
 
-            @Override
-            public PointList fetchWayGeometry(FetchMode type) {
-                PointList list = new PointList();
-                list.add(basePoint);
-                return list;
-            }
-        };
+        // if we use a very large radius we find doubtfire
+        NameSimilarityEdgeFilter filter = new NameSimilarityEdgeFilter(EdgeFilter.ALL_EDGES, "doubtfire", new GHPoint(qlat, qLon), 1_000);
+        assertFalse(filter.accept(golden));
+        assertFalse(filter.accept(denison));
+        assertTrue(filter.accept(doubtfire));
+
+        // but also using a smaller radius should work, because the inner way geomerty of Doubtfire Crescent comes very
+        // close to the marker even though the tower nodes are rather far away
+        filter = new NameSimilarityEdgeFilter(EdgeFilter.ALL_EDGES, "doubtfire", new GHPoint(qlat, qLon), 100);
+        assertFalse(filter.accept(golden));
+        assertFalse(filter.accept(denison));
+        assertTrue(filter.accept(doubtfire));
     }
 
-    private EdgeIteratorState createTestEdgeIterator(final String name) {
-        return createTestEdgeIterator(name, 0, 0);
+    private EdgeIteratorState createTestEdgeIterator(String name) {
+        PointList pointList = new PointList();
+        pointList.add(basePoint);
+        EdgeIteratorState edge = new BaseGraph.Builder(1).create().edge(0, 1)
+                .setWayGeometry(pointList);
+        if (name != null)
+            edge.setKeyValues(KVStorage.KeyValue.createKV(KVStorage.KeyValue.STREET_NAME, name));
+        return edge;
     }
 
 }

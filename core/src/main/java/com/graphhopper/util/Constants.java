@@ -30,12 +30,12 @@ import static com.graphhopper.util.Helper.*;
  */
 public class Constants {
     /**
-     * The value of <tt>System.getProperty("java.version")</tt>. *
+     * The value of <code>System.getProperty("java.version")</code>. *
      */
     public static final String JAVA_VERSION = System.getProperty("java.version");
 
     /**
-     * The value of <tt>System.getProperty("os.name")</tt>. *
+     * The value of <code>System.getProperty("os.name")</code>. *
      */
     public static final String OS_NAME = System.getProperty("os.name");
     /**
@@ -66,19 +66,23 @@ public class Constants {
     private static final int JVM_MAJOR_VERSION;
     private static final int JVM_MINOR_VERSION;
 
-    public static final int VERSION_NODE = 5;
-    public static final int VERSION_EDGE = 15;
-    public static final int VERSION_SHORTCUT = 6;
-    public static final int VERSION_GEOMETRY = 4;
-    public static final int VERSION_LOCATION_IDX = 3;
-    public static final int VERSION_STRING_IDX = 5;
+    public static final int VERSION_NODE = 9;
+    public static final int VERSION_EDGE = 21;
+    // this should be increased whenever the format of the serialized EncodingManager is changed
+    public static final int VERSION_EM = 3;
+    public static final int VERSION_SHORTCUT = 9;
+    public static final int VERSION_NODE_CH = 0;
+    public static final int VERSION_GEOMETRY = 6;
+    public static final int VERSION_TURN_COSTS = 0;
+    public static final int VERSION_LOCATION_IDX = 5;
+    public static final int VERSION_KV_STORAGE = 2;
     /**
      * The version without the snapshot string
      */
     public static final String VERSION;
     public static final String BUILD_DATE;
     /**
-     * Details about the git commit this artifact was build for, can be null (if not build using maven)
+     * Details about the git commit this artifact was built for, can be null (if not built using maven)
      */
     public static final GitInfo GIT_INFO;
     public static final boolean SNAPSHOT;
@@ -144,7 +148,7 @@ public class Constants {
 
     public static String getVersions() {
         return VERSION_NODE + "," + VERSION_EDGE + "," + VERSION_GEOMETRY + "," + VERSION_LOCATION_IDX
-                + "," + VERSION_STRING_IDX + "," + VERSION_SHORTCUT;
+                + "," + VERSION_KV_STORAGE + "," + VERSION_SHORTCUT;
     }
 
     public static String getMajorVersion() {

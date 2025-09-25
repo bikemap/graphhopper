@@ -18,37 +18,45 @@
 
 package com.graphhopper.routing;
 
-import com.carrotsearch.hppc.IntArrayList;
-import com.carrotsearch.hppc.IntIndexedContainer;
-import com.graphhopper.Repeat;
-import com.graphhopper.RepeatRule;
+import com.graphhopper.routing.ch.CHRoutingAlgorithmFactory;
 import com.graphhopper.routing.ch.PrepareContractionHierarchies;
-import com.graphhopper.routing.lm.LMConfig;
-import com.graphhopper.routing.lm.PerfectApproximator;
-import com.graphhopper.routing.lm.PrepareLandmarks;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValueImpl;
+import com.graphhopper.routing.ev.Subnetwork;
+import com.graphhopper.routing.ev.TurnCost;
+import com.graphhopper.routing.lm.*;
 import com.graphhopper.routing.querygraph.QueryGraph;
-import com.graphhopper.routing.util.*;
+import com.graphhopper.routing.querygraph.QueryRoutingCHGraph;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.SpeedWeighting;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.*;
-import com.graphhopper.storage.index.LocationIndex;
 import com.graphhopper.storage.index.LocationIndexTree;
-import com.graphhopper.storage.index.QueryResult;
+import com.graphhopper.storage.index.Snap;
 import com.graphhopper.util.GHUtility;
-import com.graphhopper.util.shapes.BBox;
-import com.graphhopper.util.shapes.GHPoint;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import com.graphhopper.util.PMap;
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.ArgumentsProvider;
+import org.junit.jupiter.params.provider.ArgumentsSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static com.graphhopper.routing.util.TraversalMode.EDGE_BASED;
 import static com.graphhopper.routing.util.TraversalMode.NODE_BASED;
+import static com.graphhopper.util.GHUtility.createRandomSnaps;
 import static com.graphhopper.util.Parameters.Algorithms.*;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static com.graphhopper.util.Parameters.Routing.ALGORITHM;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * This test compares different routing algorithms with {@link DijkstraBidirectionRef}. Most prominently it uses
@@ -56,49 +64,148 @@ import static org.junit.Assert.fail;
  *
  * @author easbar
  * @see RandomCHRoutingTest - similar but only tests CH algorithms
- * @see DirectedRoutingTest - similar but focuses on edge-based algorithms an directed queries
+ * @see DirectedRoutingTest - similar but focuses on edge-based algorithms and directed queries
  */
-@RunWith(Parameterized.class)
 public class RandomizedRoutingTest {
-    private final Algo algo;
-    private final boolean prepareCH;
-    private final boolean prepareLM;
-    private final TraversalMode traversalMode;
-    private Directory dir;
-    private GraphHopperStorage graph;
-    private List<CHConfig> chConfigs;
-    private LMConfig lmConfig;
-    private CHGraph chGraph;
-    private FlagEncoder encoder;
-    private TurnCostStorage turnCostStorage;
-    private int maxTurnCosts;
-    private Weighting weighting;
-    private EncodingManager encodingManager;
-    private PrepareContractionHierarchies pch;
-    private PrepareLandmarks lm;
+    private static final Logger LOGGER = LoggerFactory.getLogger(RandomizedRoutingTest.class);
 
-    @Rule
-    public RepeatRule repeatRule = new RepeatRule();
+    private static class FixtureProvider implements ArgumentsProvider {
+        @Override
+        public Stream<? extends Arguments> provideArguments(ExtensionContext context) {
+            return Stream.of(
+                    FixtureSupplier.create(Algo.DIJKSTRA, false, false, NODE_BASED),
+                    FixtureSupplier.create(Algo.ASTAR_UNIDIR, false, false, NODE_BASED),
+                    FixtureSupplier.create(Algo.ASTAR_BIDIR, false, false, NODE_BASED),
+                    FixtureSupplier.create(Algo.CH_ASTAR, true, false, NODE_BASED),
+                    FixtureSupplier.create(Algo.CH_DIJKSTRA, true, false, NODE_BASED),
+                    FixtureSupplier.create(Algo.LM_UNIDIR, false, true, NODE_BASED),
+                    FixtureSupplier.create(Algo.LM_BIDIR, false, true, NODE_BASED),
+                    FixtureSupplier.create(Algo.DIJKSTRA, false, false, EDGE_BASED),
+                    FixtureSupplier.create(Algo.ASTAR_UNIDIR, false, false, EDGE_BASED),
+                    FixtureSupplier.create(Algo.ASTAR_BIDIR, false, false, EDGE_BASED),
+                    FixtureSupplier.create(Algo.CH_ASTAR, true, false, EDGE_BASED),
+                    FixtureSupplier.create(Algo.CH_DIJKSTRA, true, false, EDGE_BASED),
+                    FixtureSupplier.create(Algo.LM_UNIDIR, false, true, EDGE_BASED),
+                    FixtureSupplier.create(Algo.LM_BIDIR, false, true, EDGE_BASED),
+                    FixtureSupplier.create(Algo.PERFECT_ASTAR, false, false, NODE_BASED)
+            ).map(Arguments::of);
+        }
+    }
 
-    @Parameterized.Parameters(name = "{0}, {3}")
-    public static Collection<Object[]> params() {
-        return Arrays.asList(new Object[][]{
-                {Algo.DIJKSTRA, false, false, NODE_BASED},
-                {Algo.ASTAR_UNIDIR, false, false, NODE_BASED},
-                {Algo.ASTAR_BIDIR, false, false, NODE_BASED},
-                {Algo.CH_ASTAR, true, false, NODE_BASED},
-                {Algo.CH_DIJKSTRA, true, false, NODE_BASED},
-                {Algo.LM_UNIDIR, false, true, NODE_BASED},
-                {Algo.LM_BIDIR, false, true, NODE_BASED},
-                {Algo.DIJKSTRA, false, false, EDGE_BASED},
-                {Algo.ASTAR_UNIDIR, false, false, EDGE_BASED},
-                {Algo.ASTAR_BIDIR, false, false, EDGE_BASED},
-                {Algo.CH_ASTAR, true, false, EDGE_BASED},
-                {Algo.CH_DIJKSTRA, true, false, EDGE_BASED},
-                {Algo.LM_UNIDIR, false, true, EDGE_BASED},
-                {Algo.LM_BIDIR, false, true, EDGE_BASED},
-                {Algo.PERFECT_ASTAR, false, false, NODE_BASED}
-        });
+    private static class FixtureSupplier {
+        private final Supplier<Fixture> supplier;
+        private final String name;
+
+        static FixtureSupplier create(Algo algo, boolean prepareCH, boolean prepareLM, TraversalMode traversalMode) {
+            return new FixtureSupplier(() -> new Fixture(algo, prepareCH, prepareLM, traversalMode), algo.toString());
+        }
+
+        public FixtureSupplier(Supplier<Fixture> supplier, String name) {
+            this.supplier = supplier;
+            this.name = name;
+        }
+
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+
+    private static class Fixture {
+        private final Algo algo;
+        private final boolean prepareCH;
+        private final boolean prepareLM;
+        private final TraversalMode traversalMode;
+        private final BaseGraph graph;
+        private final DecimalEncodedValue speedEnc;
+        private final DecimalEncodedValue turnCostEnc;
+        private final TurnCostStorage turnCostStorage;
+        private final int maxTurnCosts;
+        private Weighting weighting;
+        private final EncodingManager encodingManager;
+        private RoutingCHGraph routingCHGraph;
+        private LandmarkStorage lm;
+
+        Fixture(Algo algo, boolean prepareCH, boolean prepareLM, TraversalMode traversalMode) {
+            this.algo = algo;
+            this.prepareCH = prepareCH;
+            this.prepareLM = prepareLM;
+            this.traversalMode = traversalMode;
+            maxTurnCosts = 10;
+            speedEnc = new DecimalEncodedValueImpl("speed", 5, 5, true);
+            turnCostEnc = TurnCost.create("car", maxTurnCosts);
+            encodingManager = new EncodingManager.Builder().add(speedEnc).addTurnCostEncodedValue(turnCostEnc).add(Subnetwork.create("car")).build();
+            graph = new BaseGraph.Builder(encodingManager)
+                    .withTurnCosts(true)
+                    .create();
+            turnCostStorage = graph.getTurnCostStorage();
+        }
+
+        @Override
+        public String toString() {
+            return algo + ", " + traversalMode;
+        }
+
+        private void preProcessGraph() {
+            graph.freeze();
+            weighting = traversalMode.isEdgeBased()
+                    ? new SpeedWeighting(speedEnc, turnCostEnc, graph.getTurnCostStorage(), Double.POSITIVE_INFINITY)
+                    : new SpeedWeighting(speedEnc);
+            if (prepareCH) {
+                CHConfig chConfig = traversalMode.isEdgeBased() ? CHConfig.edgeBased("p", weighting) : CHConfig.nodeBased("p", weighting);
+                PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraph(graph, chConfig);
+                PrepareContractionHierarchies.Result res = pch.doWork();
+                routingCHGraph = RoutingCHGraphImpl.fromGraph(graph, res.getCHStorage(), res.getCHConfig());
+            }
+            if (prepareLM) {
+                // important: for LM preparation we need to use a weighting without turn costs #1960
+                LMConfig lmConfig = new LMConfig("car", new SpeedWeighting(speedEnc));
+                PrepareLandmarks prepare = new PrepareLandmarks(graph.getDirectory(), graph, encodingManager, lmConfig, 16);
+                prepare.setMaximumWeight(10000);
+                prepare.doWork();
+                lm = prepare.getLandmarkStorage();
+            }
+        }
+
+        private RoutingAlgorithm createAlgo() {
+            return createAlgo(graph);
+        }
+
+        private RoutingAlgorithm createAlgo(Graph graph) {
+            switch (algo) {
+                case DIJKSTRA:
+                    return new Dijkstra(graph, graph.wrapWeighting(weighting), traversalMode);
+                case ASTAR_UNIDIR:
+                    return new AStar(graph, graph.wrapWeighting(weighting), traversalMode);
+                case ASTAR_BIDIR:
+                    return new AStarBidirection(graph, graph.wrapWeighting(weighting), traversalMode);
+                case CH_DIJKSTRA: {
+                    CHRoutingAlgorithmFactory algoFactory = graph instanceof QueryGraph
+                            ? new CHRoutingAlgorithmFactory(new QueryRoutingCHGraph(routingCHGraph, (QueryGraph) graph))
+                            : new CHRoutingAlgorithmFactory(routingCHGraph);
+                    return algoFactory.createAlgo(new PMap().putObject(ALGORITHM, DIJKSTRA_BI));
+                }
+                case CH_ASTAR: {
+                    CHRoutingAlgorithmFactory algoFactory = graph instanceof QueryGraph
+                            ? new CHRoutingAlgorithmFactory(new QueryRoutingCHGraph(routingCHGraph, (QueryGraph) graph))
+                            : new CHRoutingAlgorithmFactory(routingCHGraph);
+                    return algoFactory.createAlgo(new PMap().putObject(ALGORITHM, ASTAR_BI));
+                }
+                case LM_BIDIR:
+                    return new LMRoutingAlgorithmFactory(lm).createAlgo(graph, weighting, new AlgorithmOptions().setAlgorithm(ASTAR_BI).setTraversalMode(traversalMode));
+                case LM_UNIDIR:
+                    return new LMRoutingAlgorithmFactory(lm).createAlgo(graph, weighting, new AlgorithmOptions().setAlgorithm(ASTAR).setTraversalMode(traversalMode));
+                case PERFECT_ASTAR: {
+                    AStarBidirection perfectAStarBi = new AStarBidirection(graph, weighting, traversalMode);
+                    perfectAStarBi.setApproximation(new PerfectApproximator(graph, weighting, traversalMode, false));
+                    return perfectAStarBi;
+                }
+                default:
+                    throw new IllegalArgumentException("unknown algo " + algo);
+            }
+        }
+
     }
 
     private enum Algo {
@@ -112,110 +219,50 @@ public class RandomizedRoutingTest {
         PERFECT_ASTAR
     }
 
-    public RandomizedRoutingTest(Algo algo, boolean prepareCH, boolean prepareLM, TraversalMode traversalMode) {
-        this.algo = algo;
-        this.prepareCH = prepareCH;
-        this.prepareLM = prepareLM;
-        this.traversalMode = traversalMode;
-    }
-
-    @Before
-    public void init() {
-        maxTurnCosts = 10;
-        dir = new RAMDirectory();
-        // todo: this test fails sometimes with MotorCycleEncoder (for dijkstra, LM and CH) unless we disable turn costs! #1972
-        encoder = new CarFlagEncoder(5, 5, maxTurnCosts);
-        encodingManager = EncodingManager.create(encoder);
-        graph = new GraphBuilder(encodingManager)
-                .setCHConfigStrings("p1|car|fastest|node", "p2|car|fastest|edge")
-                .setDir(dir)
-                .create();
-        turnCostStorage = graph.getTurnCostStorage();
-        chConfigs = graph.getCHConfigs();
-        // important: for LM preparation we need to use a weighting without turn costs #1960
-        lmConfig = new LMConfig("config", chConfigs.get(0).getWeighting());
-        weighting = traversalMode.isEdgeBased() ? chConfigs.get(1).getWeighting() : chConfigs.get(0).getWeighting();
-    }
-
-    private void preProcessGraph() {
-        graph.freeze();
-        if (prepareCH) {
-            CHConfig chConfig = !traversalMode.isEdgeBased() ? chConfigs.get(0) : chConfigs.get(1);
-            pch = PrepareContractionHierarchies.fromGraphHopperStorage(graph, chConfig);
-            pch.doWork();
-            chGraph = graph.getCHGraph(chConfig);
-        }
-        if (prepareLM) {
-            lm = new PrepareLandmarks(dir, graph, lmConfig, 16);
-            lm.setMaximumWeight(10000);
-            lm.doWork();
+    private static class RepeatedFixtureProvider implements ArgumentsProvider {
+        @Override
+        public Stream<? extends Arguments> provideArguments(ExtensionContext context) {
+            return Stream.generate(() -> new FixtureProvider().provideArguments(context)).limit(5).flatMap(s -> s);
         }
     }
 
-    private RoutingAlgorithm createAlgo() {
-        return createAlgo(graph);
-    }
-
-    private RoutingAlgorithm createAlgo(Graph graph) {
-        switch (algo) {
-            case DIJKSTRA:
-                return new Dijkstra(graph, graph.wrapWeighting(weighting), traversalMode);
-            case ASTAR_UNIDIR:
-                return new AStar(graph, graph.wrapWeighting(weighting), traversalMode);
-            case ASTAR_BIDIR:
-                return new AStarBidirection(graph, graph.wrapWeighting(weighting), traversalMode);
-            case CH_DIJKSTRA:
-                return pch.getRoutingAlgorithmFactory().createAlgo(graph instanceof QueryGraph ? graph : chGraph, AlgorithmOptions.start().weighting(weighting).algorithm(DIJKSTRA_BI).build());
-            case CH_ASTAR:
-                return pch.getRoutingAlgorithmFactory().createAlgo(graph instanceof QueryGraph ? graph : chGraph, AlgorithmOptions.start().weighting(weighting).algorithm(ASTAR_BI).build());
-            case LM_BIDIR:
-                return lm.getRoutingAlgorithmFactory().createAlgo(graph, AlgorithmOptions.start().weighting(weighting).algorithm(ASTAR_BI).traversalMode(traversalMode).build());
-            case LM_UNIDIR:
-                return lm.getRoutingAlgorithmFactory().createAlgo(graph, AlgorithmOptions.start().weighting(weighting).algorithm(ASTAR).traversalMode(traversalMode).build());
-            case PERFECT_ASTAR:
-                AStarBidirection perfectastarbi = new AStarBidirection(graph, weighting, traversalMode);
-                perfectastarbi.setApproximation(new PerfectApproximator(graph, weighting, traversalMode, false));
-                return perfectastarbi;
-            default:
-                throw new IllegalArgumentException("unknown algo " + algo);
-        }
-    }
-
-    @Test
-    @Repeat(times = 5)
-    public void randomGraph() {
+    @ParameterizedTest
+    @ArgumentsSource(RepeatedFixtureProvider.class)
+    public void randomGraph(FixtureSupplier fixtureSupplier) {
+        Fixture f = fixtureSupplier.supplier.get();
         final long seed = System.nanoTime();
         final int numQueries = 50;
         Random rnd = new Random(seed);
-        GHUtility.buildRandomGraph(graph, rnd, 100, 2.2, true, true, encoder.getAverageSpeedEnc(), 0.7, 0.8, 0.8);
-        GHUtility.addRandomTurnCosts(graph, seed, encodingManager, encoder, maxTurnCosts, turnCostStorage);
-//        GHUtility.printGraphForUnitTest(graph, encoder);
-        preProcessGraph();
+        GHUtility.buildRandomGraph(f.graph, rnd, 100, 2.2, true, f.speedEnc, null, 0.8, 0.8);
+        GHUtility.addRandomTurnCosts(f.graph, seed, null, f.turnCostEnc, f.maxTurnCosts, f.turnCostStorage);
+//        GHUtility.printGraphForUnitTest(f.graph, null, f.speedEnc);
+        f.preProcessGraph();
         List<String> strictViolations = new ArrayList<>();
         for (int i = 0; i < numQueries; i++) {
-            int source = getRandom(rnd);
-            int target = getRandom(rnd);
-//            System.out.println("source: " + source + ", target: " + target);
-            Path refPath = new DijkstraBidirectionRef(graph, weighting, traversalMode)
+            int source = rnd.nextInt(f.graph.getNodes());
+            int target = rnd.nextInt(f.graph.getNodes());
+//            LOGGER.info("source: " + source + ", target: " + target);
+            Path refPath = new DijkstraBidirectionRef(f.graph, f.weighting, f.traversalMode)
                     .calcPath(source, target);
-            Path path = createAlgo()
+            Path path = f.createAlgo()
                     .calcPath(source, target);
-            strictViolations.addAll(comparePaths(refPath, path, source, target, seed));
+            strictViolations.addAll(GHUtility.comparePaths(refPath, path, source, target, seed));
         }
         if (strictViolations.size() > 3) {
             for (String strictViolation : strictViolations) {
-                System.out.println("strict violation: " + strictViolation);
+                LOGGER.info("strict violation: " + strictViolation);
             }
             fail("Too many strict violations: " + strictViolations.size() + " / " + numQueries + ", seed: " + seed);
         }
     }
 
     /**
-     * Similar to {@link #randomGraph()}, but using the {@link QueryGraph} as it is done in real usage.
+     * Similar to {@link #randomGraph}, but using the {@link QueryGraph} as it is done in real usage.
      */
-    @Test
-    @Repeat(times = 5)
-    public void randomGraph_withQueryGraph() {
+    @ParameterizedTest
+    @ArgumentsSource(RepeatedFixtureProvider.class)
+    public void randomGraph_withQueryGraph(FixtureSupplier fixtureSupplier) {
+        Fixture f = fixtureSupplier.supplier.get();
         final long seed = System.nanoTime();
         final int numQueries = 50;
 
@@ -223,106 +270,29 @@ public class RandomizedRoutingTest {
         // the same as taking the direct edge!
         double pOffset = 0;
         Random rnd = new Random(seed);
-        GHUtility.buildRandomGraph(graph, rnd, 50, 2.2, true, true, encoder.getAverageSpeedEnc(), 0.7, 0.8, pOffset);
-        GHUtility.addRandomTurnCosts(graph, seed, encodingManager, encoder, maxTurnCosts, turnCostStorage);
-//        GHUtility.printGraphForUnitTest(graph, encoder);
-        preProcessGraph();
-        LocationIndexTree index = new LocationIndexTree(graph, dir);
+        GHUtility.buildRandomGraph(f.graph, rnd, 50, 2.2, true, f.speedEnc, null, 0.8, pOffset);
+        GHUtility.addRandomTurnCosts(f.graph, seed, null, f.turnCostEnc, f.maxTurnCosts, f.turnCostStorage);
+//        GHUtility.printGraphForUnitTest(f.graph, null, f.speedEnc);
+        f.preProcessGraph();
+        LocationIndexTree index = new LocationIndexTree(f.graph, f.graph.getDirectory());
         index.prepareIndex();
         List<String> strictViolations = new ArrayList<>();
         for (int i = 0; i < numQueries; i++) {
-            List<GHPoint> points = getRandomPoints(graph.getBounds(), 2, index, rnd);
-            List<QueryResult> chQueryResults = findQueryResults(index, points);
-            List<QueryResult> queryResults = findQueryResults(index, points);
+            List<Snap> snaps = createRandomSnaps(f.graph.getBounds(), index, rnd, 2, true, EdgeFilter.ALL_EDGES);
+            QueryGraph queryGraph = QueryGraph.create(f.graph, snaps);
 
-            QueryGraph chQueryGraph = QueryGraph.create(prepareCH ? chGraph : graph, chQueryResults);
-            QueryGraph queryGraph = QueryGraph.create(graph, queryResults);
+            int source = snaps.get(0).getClosestNode();
+            int target = snaps.get(1).getClosestNode();
 
-            int source = queryResults.get(0).getClosestNode();
-            int target = queryResults.get(1).getClosestNode();
-
-            Path refPath = new DijkstraBidirectionRef(queryGraph, queryGraph.wrapWeighting(weighting), traversalMode).calcPath(source, target);
-            Path path = createAlgo(chQueryGraph).calcPath(source, target);
-            strictViolations.addAll(comparePaths(refPath, path, source, target, seed));
+            Path refPath = new DijkstraBidirectionRef(queryGraph, queryGraph.wrapWeighting(f.weighting), f.traversalMode).calcPath(source, target);
+            Path path = f.createAlgo(queryGraph).calcPath(source, target);
+            strictViolations.addAll(GHUtility.comparePaths(refPath, path, source, target, seed));
         }
         // we do not do a strict check because there can be ambiguity, for example when there are zero weight loops.
         // however, when there are too many deviations we fail
         if (strictViolations.size() > 3) {
+            LOGGER.warn(strictViolations.toString());
             fail("Too many strict violations: " + strictViolations.size() + " / " + numQueries + ", seed: " + seed);
         }
     }
-
-    static List<GHPoint> getRandomPoints(BBox bounds, int numPoints, LocationIndex index, Random rnd) {
-        List<GHPoint> points = new ArrayList<>(numPoints);
-        final int maxAttempts = 100 * numPoints;
-        int attempts = 0;
-        while (attempts < maxAttempts && points.size() < numPoints) {
-            double lat = rnd.nextDouble() * (bounds.maxLat - bounds.minLat) + bounds.minLat;
-            double lon = rnd.nextDouble() * (bounds.maxLon - bounds.minLon) + bounds.minLon;
-            QueryResult queryResult = index.findClosest(lat, lon, EdgeFilter.ALL_EDGES);
-            if (queryResult.isValid()) {
-                points.add(new GHPoint(lat, lon));
-            }
-            attempts++;
-        }
-        assertEquals("could not find valid random points after " + attempts + " attempts", numPoints, points.size());
-        return points;
-    }
-
-    private List<QueryResult> findQueryResults(LocationIndexTree index, List<GHPoint> ghPoints) {
-        List<QueryResult> result = new ArrayList<>(ghPoints.size());
-        for (GHPoint ghPoint : ghPoints) {
-            result.add(index.findClosest(ghPoint.getLat(), ghPoint.getLon(), DefaultEdgeFilter.ALL_EDGES));
-        }
-        return result;
-    }
-
-    private List<String> comparePaths(Path refPath, Path path, int source, int target, long seed) {
-        List<String> strictViolations = new ArrayList<>();
-        double refWeight = refPath.getWeight();
-        double weight = path.getWeight();
-        if (Math.abs(refWeight - weight) > 1.e-2) {
-            System.out.println("expected: " + refPath.calcNodes());
-            System.out.println("given:    " + path.calcNodes());
-            System.out.println("seed: " + seed);
-            fail("wrong weight: " + source + "->" + target + "\nexpected: " + refWeight + "\ngiven:    " + weight + "\nseed: " + seed);
-        }
-        if (Math.abs(path.getDistance() - refPath.getDistance()) > 1.e-1) {
-            strictViolations.add("wrong distance " + source + "->" + target + ", expected: " + refPath.getDistance() + ", given: " + path.getDistance());
-        }
-        if (Math.abs(path.getTime() - refPath.getTime()) > 50) {
-            strictViolations.add("wrong time " + source + "->" + target + ", expected: " + refPath.getTime() + ", given: " + path.getTime());
-        }
-        IntIndexedContainer refNodes = refPath.calcNodes();
-        IntIndexedContainer pathNodes = path.calcNodes();
-        if (!refNodes.equals(pathNodes)) {
-            // sometimes paths are only different because of a zero weight loop. we do not consider these as strict
-            // violations, see: #1864
-            if (!removeConsecutiveDuplicates(refNodes).equals(removeConsecutiveDuplicates(pathNodes))) {
-                strictViolations.add("wrong nodes " + source + "->" + target + "\nexpected: " + refNodes + "\ngiven:    " + pathNodes);
-            }
-        }
-        return strictViolations;
-    }
-
-    static IntIndexedContainer removeConsecutiveDuplicates(IntIndexedContainer arr) {
-        if (arr.size() < 2) {
-            return arr;
-        }
-        IntArrayList result = new IntArrayList();
-        int prev = arr.get(0);
-        for (int i = 1; i < arr.size(); i++) {
-            int val = arr.get(i);
-            if (val != prev) {
-                result.add(val);
-            }
-            prev = val;
-        }
-        return result;
-    }
-
-    private int getRandom(Random rnd) {
-        return rnd.nextInt(graph.getNodes());
-    }
-
 }

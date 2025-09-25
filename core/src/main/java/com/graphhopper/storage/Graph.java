@@ -35,7 +35,7 @@ public interface Graph {
      * @return a graph which behaves like an unprepared graph and e.g. the normal unidirectional
      * Dijkstra or any graph traversal algorithm can be executed.
      */
-    Graph getBaseGraph();
+    BaseGraph getBaseGraph();
 
     /**
      * @return the number of created locations - via setNode() or edge()
@@ -68,11 +68,6 @@ public interface Graph {
     EdgeIteratorState edge(int a, int b);
 
     /**
-     * Use edge(a,b).setDistance().setFlags instead
-     */
-    EdgeIteratorState edge(int a, int b, double distance, boolean bothDirections);
-
-    /**
      * Returns a wrapper over the specified edgeId.
      *
      * @param adjNode is the node that will be returned via getAdjNode(). If adjNode is
@@ -81,6 +76,13 @@ public interface Graph {
      * @throws IllegalStateException if edgeId is not valid
      */
     EdgeIteratorState getEdgeIteratorState(int edgeId, int adjNode);
+
+    /**
+     * Returns the edge state for the given edge key
+     *
+     * @see EdgeIteratorState#getEdgeKey()
+     */
+    EdgeIteratorState getEdgeIteratorStateForKey(int edgeKey);
 
     /**
      * @return the 'opposite' node of a given edge, so if there is an edge 3-2 and node =2 this returns 3
@@ -100,23 +102,17 @@ public interface Graph {
     /**
      * Returns an EdgeExplorer which makes it possible to traverse all filtered edges of a specific
      * node. Calling this method might be expensive, so e.g. create an explorer before a for loop!
-     *
-     * @see EdgeExplorer
-     * @see Graph#createEdgeExplorer()
      */
     EdgeExplorer createEdgeExplorer(EdgeFilter filter);
 
     /**
-     * @see Graph#createEdgeExplorer(com.graphhopper.routing.util.EdgeFilter)
-     */
-    EdgeExplorer createEdgeExplorer();
-
-    /**
-     * Copy this Graph into the specified Graph g.
+     * Creates an EdgeExplorer that accepts all edges
      *
-     * @return the specified Graph g
+     * @see #createEdgeExplorer(EdgeFilter)
      */
-    Graph copyTo(Graph g);
+    default EdgeExplorer createEdgeExplorer() {
+        return createEdgeExplorer(EdgeFilter.ALL_EDGES);
+    }
 
     /**
      * @return the {@link TurnCostStorage} or null if not supported

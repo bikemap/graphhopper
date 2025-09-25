@@ -42,10 +42,8 @@ public class DijkstraBidirectionRef extends AbstractNonCHBidirAlgo {
     }
 
     @Override
-    protected SPTEntry createEntry(EdgeIteratorState edge, int incEdge, double weight, SPTEntry parent, boolean reverse) {
-        SPTEntry entry = new SPTEntry(edge.getEdge(), edge.getAdjNode(), weight);
-        entry.parent = parent;
-        return entry;
+    protected SPTEntry createEntry(EdgeIteratorState edge, double weight, SPTEntry parent, boolean reverse) {
+        return new SPTEntry(edge.getEdge(), edge.getAdjNode(), weight, parent);
     }
 
     protected SPTEntry getParent(SPTEntry entry) {

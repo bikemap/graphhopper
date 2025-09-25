@@ -43,6 +43,6 @@ public class BMWeight {
     }
 
     public static IntEncodedValue create(String key) {
-        return new UnsignedIntEncodedValue(key, 31, false);
+        return new IntEncodedValueImpl(key, 31, false);
     }
 }

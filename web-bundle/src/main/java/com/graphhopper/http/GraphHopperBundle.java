@@ -18,30 +18,24 @@
 
 package com.graphhopper.http;
 
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.MapperFeature;
-import com.fasterxml.jackson.databind.SerializationConfig;
-import com.fasterxml.jackson.databind.SerializerProvider;
-import com.fasterxml.jackson.databind.module.SimpleModule;
-import com.fasterxml.jackson.databind.ser.BeanPropertyWriter;
-import com.fasterxml.jackson.databind.ser.BeanSerializerModifier;
 import com.fasterxml.jackson.databind.util.StdDateFormat;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.graphhopper.GraphHopper;
-import com.graphhopper.GraphHopperAPI;
 import com.graphhopper.GraphHopperConfig;
+import com.graphhopper.gtfs.*;
 import com.graphhopper.http.health.GraphHopperHealthCheck;
+import com.graphhopper.isochrone.algorithm.JTSTriangulator;
+import com.graphhopper.isochrone.algorithm.Triangulator;
 import com.graphhopper.jackson.Jackson;
-import com.graphhopper.reader.gtfs.GraphHopperGtfs;
-import com.graphhopper.reader.gtfs.GtfsStorage;
-import com.graphhopper.reader.gtfs.PtRouteResource;
+import com.graphhopper.matching.MapMatching;
 import com.graphhopper.resources.*;
-import com.graphhopper.routing.ProfileResolver;
 import com.graphhopper.routing.util.EncodingManager;
-import com.graphhopper.storage.GraphHopperStorage;
+import com.graphhopper.storage.BaseGraph;
 import com.graphhopper.storage.index.LocationIndex;
+import com.graphhopper.util.PMap;
 import com.graphhopper.util.TranslationMap;
+import com.graphhopper.util.details.PathDetailsBuilderFactory;
 import io.dropwizard.ConfiguredBundle;
 import io.dropwizard.setup.Bootstrap;
 import io.dropwizard.setup.Environment;
@@ -49,8 +43,6 @@ import org.glassfish.hk2.api.Factory;
 import org.glassfish.hk2.utilities.binding.AbstractBinder;
 
 import javax.inject.Inject;
-import java.util.List;
-import java.util.stream.Collectors;
 
 public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConfiguration> {
 
@@ -70,18 +62,18 @@ public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConf
         }
     }
 
-    static class GraphHopperStorageFactory implements Factory<GraphHopperStorage> {
+    static class BaseGraphFactory implements Factory<BaseGraph> {
 
         @Inject
         GraphHopper graphHopper;
 
         @Override
-        public GraphHopperStorage provide() {
-            return graphHopper.getGraphHopperStorage();
+        public BaseGraph provide() {
+            return graphHopper.getBaseGraph();
         }
 
         @Override
-        public void dispose(GraphHopperStorage instance) {
+        public void dispose(BaseGraph instance) {
 
         }
     }
@@ -135,21 +127,64 @@ public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConf
     }
 
     static class ProfileResolverFactory implements Factory<ProfileResolver> {
-
         @Inject
         GraphHopper graphHopper;
 
         @Override
         public ProfileResolver provide() {
-            return new ProfileResolver(graphHopper.getEncodingManager(),
-                    graphHopper.getProfiles(),
-                    graphHopper.getCHPreparationHandler().getCHProfiles(),
-                    graphHopper.getLMPreparationHandler().getLMProfiles()
-            );
+            return new ProfileResolver(graphHopper.getProfiles());
         }
 
         @Override
-        public void dispose(ProfileResolver profileResolver) {
+        public void dispose(ProfileResolver instance) {
+
+        }
+    }
+
+    static class GHRequestTransformerFactory implements Factory<GHRequestTransformer> {
+        @Override
+        public GHRequestTransformer provide() {
+            return req -> req;
+        }
+
+        @Override
+        public void dispose(GHRequestTransformer instance) {
+        }
+    }
+
+    static class PathDetailsBuilderFactoryFactory implements Factory<PathDetailsBuilderFactory> {
+
+        @Inject
+        GraphHopper graphHopper;
+
+        @Override
+        public PathDetailsBuilderFactory provide() {
+            return graphHopper.getPathDetailsBuilderFactory();
+        }
+
+        @Override
+        public void dispose(PathDetailsBuilderFactory profileResolver) {
+
+        }
+    }
+
+    static class MapMatchingRouterFactoryFactory implements Factory<MapMatchingResource.MapMatchingRouterFactory> {
+
+        @Inject
+        GraphHopper graphHopper;
+
+        @Override
+        public MapMatchingResource.MapMatchingRouterFactory provide() {
+            return new MapMatchingResource.MapMatchingRouterFactory() {
+                @Override
+                public MapMatching.Router createMapMatchingRouter(PMap hints) {
+                    return MapMatching.routerFromGraphHopper(graphHopper, hints);
+                }
+            };
+        }
+
+        @Override
+        public void dispose(MapMatchingResource.MapMatchingRouterFactory mapMatchingRouterFactory) {
 
         }
     }
@@ -181,23 +216,6 @@ public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConf
         bootstrap.getObjectMapper().setDateFormat(new StdDateFormat());
         // See https://github.com/dropwizard/dropwizard/issues/1558
         bootstrap.getObjectMapper().enable(MapperFeature.ALLOW_EXPLICIT_PROPERTY_RENAMING);
-        // Because VirtualEdgeIteratorState has getters which throw Exceptions.
-        // http://stackoverflow.com/questions/35359430/how-to-make-jackson-ignore-properties-if-the-getters-throw-exceptions
-        bootstrap.getObjectMapper().registerModule(new SimpleModule().setSerializerModifier(new BeanSerializerModifier() {
-            @Override
-            public List<BeanPropertyWriter> changeProperties(SerializationConfig config, BeanDescription beanDesc, List<BeanPropertyWriter> beanProperties) {
-                return beanProperties.stream().map(bpw -> new BeanPropertyWriter(bpw) {
-                    @Override
-                    public void serializeAsField(Object bean, JsonGenerator gen, SerializerProvider prov) throws Exception {
-                        try {
-                            super.serializeAsField(bean, gen, prov);
-                        } catch (Exception e) {
-                            // Ignoring expected exception, see above.
-                        }
-                    }
-                }).collect(Collectors.toList());
-            }
-        }));
     }
 
     @Override
@@ -236,7 +254,7 @@ public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConf
         // a single entry.
         environment.jersey().register(new IllegalArgumentExceptionMapper());
 
-        final GraphHopperManaged graphHopperManaged = new GraphHopperManaged(configuration.getGraphHopperConfiguration(), environment.getObjectMapper());
+        final GraphHopperManaged graphHopperManaged = new GraphHopperManaged(configuration.getGraphHopperConfiguration());
         environment.lifecycle().manage(graphHopperManaged);
         final GraphHopper graphHopper = graphHopperManaged.getGraphHopper();
         environment.jersey().register(new AbstractBinder() {
@@ -244,14 +262,17 @@ public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConf
             protected void configure() {
                 bind(configuration.getGraphHopperConfiguration()).to(GraphHopperConfig.class);
                 bind(graphHopper).to(GraphHopper.class);
-                bind(graphHopper).to(GraphHopperAPI.class);
 
+                bind(new JTSTriangulator(graphHopper.getRouterConfig())).to(Triangulator.class);
+                bindFactory(MapMatchingRouterFactoryFactory.class).to(MapMatchingResource.MapMatchingRouterFactory.class);
+                bindFactory(PathDetailsBuilderFactoryFactory.class).to(PathDetailsBuilderFactory.class);
                 bindFactory(ProfileResolverFactory.class).to(ProfileResolver.class);
+                bindFactory(GHRequestTransformerFactory.class).to(GHRequestTransformer.class);
                 bindFactory(HasElevation.class).to(Boolean.class).named("hasElevation");
                 bindFactory(LocationIndexFactory.class).to(LocationIndex.class);
                 bindFactory(TranslationMapFactory.class).to(TranslationMap.class);
                 bindFactory(EncodingManagerFactory.class).to(EncodingManager.class);
-                bindFactory(GraphHopperStorageFactory.class).to(GraphHopperStorage.class);
+                bindFactory(BaseGraphFactory.class).to(BaseGraph.class);
                 bindFactory(GtfsStorageFactory.class).to(GtfsStorage.class);
             }
         });
@@ -261,17 +282,31 @@ public class GraphHopperBundle implements ConfiguredBundle<GraphHopperBundleConf
         environment.jersey().register(RouteResource.class);
         environment.jersey().register(CustomWeightingRouteResource.class);
         environment.jersey().register(IsochroneResource.class);
+        environment.jersey().register(MapMatchingResource.class);
         if (configuration.getGraphHopperConfiguration().has("gtfs.file")) {
             // These are pt-specific implementations of /route and /isochrone, but the same API.
             // We serve them under different paths (/route-pt and /isochrone-pt), and forward
             // requests for ?vehicle=pt there.
+            environment.jersey().register(new AbstractBinder() {
+                @Override
+                protected void configure() {
+                    if (configuration.getGraphHopperConfiguration().getBool("gtfs.free_walk", false)) {
+                        bind(PtRouterFreeWalkImpl.class).to(PtRouter.class);
+                    } else {
+                        bind(PtRouterImpl.class).to(PtRouter.class);
+                    }
+                }
+            });
             environment.jersey().register(PtRouteResource.class);
             environment.jersey().register(PtIsochroneResource.class);
+            environment.jersey().register(PtMVTResource.class);
             environment.jersey().register(PtRedirectFilter.class);
         }
         environment.jersey().register(SPTResource.class);
         environment.jersey().register(I18NResource.class);
         environment.jersey().register(InfoResource.class);
         environment.healthChecks().register("graphhopper", new GraphHopperHealthCheck(graphHopper));
+        environment.jersey().register(environment.healthChecks());
+        environment.jersey().register(HealthCheckResource.class);
     }
 }

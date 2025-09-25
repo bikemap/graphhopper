@@ -18,16 +18,37 @@
 
 package com.graphhopper.storage;
 
-import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.EdgeIterator;
 
 public interface RoutingCHEdgeIteratorState {
-    EdgeIteratorState getBaseGraphEdgeState();
-
+    /**
+     * The CH edge ID of this edge state. This is generally not the same as {@link #getOrigEdge()}
+     */
     int getEdge();
 
-    int getOrigEdgeFirst();
+    /**
+     * The original/base/query graph edge ID of the edge this CH edge state represents or {@link EdgeIterator#NO_EDGE}
+     * if this is edge state is a shortcut
+     */
+    int getOrigEdge();
 
-    int getOrigEdgeLast();
+    /**
+     * For shortcuts of an edge-based CH graph this is the key of the first original edge of this edge state
+     * *in the direction of the shortcut*, i.e. the one this shortcut starts with. Otherwise it is the key of the
+     * original/base/query graph edge this CH edge state represents.
+     * It is not so obvious how the direction of this key shall be defined. For base graph edges it is clear as we use
+     * the storage direction and the value of the key simply depends on which node is the base node
+     * (the one stored first or second). For shortcut edges we use the direction of the shortcut to define the direction
+     * of the first/last original edge key.
+     */
+    int getOrigEdgeKeyFirst();
+
+    /**
+     * @see #getOrigEdgeKeyFirst(), but for the last edge, i.e. the one the shortcut points to.
+     * For shortcuts of an edge-based CH graph this is the key of the last original edge of this edge state, otherwise
+     * it is the key of the original/base/query graph edge this CH edge state represents.
+     */
+    int getOrigEdgeKeyLast();
 
     int getBaseNode();
 
@@ -35,9 +56,16 @@ public interface RoutingCHEdgeIteratorState {
 
     boolean isShortcut();
 
+    /**
+     * The CH edge ID of the first skipped edge/shortcut of this edge state
+     */
     int getSkippedEdge1();
 
+    /**
+     * The CH edge ID of the second skipped edge/shortcut of this edge state
+     */
     int getSkippedEdge2();
 
     double getWeight(boolean reverse);
+
 }

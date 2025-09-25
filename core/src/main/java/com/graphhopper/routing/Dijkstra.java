@@ -57,19 +57,23 @@ public class Dijkstra extends AbstractRoutingAlgorithm {
     @Override
     public Path calcPath(int from, int to) {
         checkAlreadyRun();
+        setupFinishTime();
         this.to = to;
-        currEdge = new SPTEntry(from, 0);
-        if (!traversalMode.isEdgeBased()) {
+        SPTEntry startEntry = new SPTEntry(from, 0);
+        fromHeap.add(startEntry);
+        if (!traversalMode.isEdgeBased())
             fromMap.put(from, currEdge);
-        }
         runAlgo();
         return extractPath();
     }
 
     protected void runAlgo() {
-        while (true) {
+        while (!fromHeap.isEmpty()) {
+            currEdge = fromHeap.poll();
+            if (currEdge.isDeleted())
+                continue;
             visitedNodes++;
-            if (isMaxVisitedNodesExceeded() || finished())
+            if (isMaxVisitedNodesExceeded() || finished() || isTimeoutExceeded())
                 break;
 
             int currNode = currEdge.adjNode;
@@ -78,10 +82,7 @@ public class Dijkstra extends AbstractRoutingAlgorithm {
                 if (!accept(iter, currEdge.edge))
                     continue;
 
-                // todo: for #1776/#1835 move the access check into weighting
-                double tmpWeight = !outEdgeFilter.accept(iter)
-                        ? Double.POSITIVE_INFINITY
-                        : (GHUtility.calcWeightWithTurnWeight(weighting, iter, false, currEdge.edge) + currEdge.weight);
+                double tmpWeight = GHUtility.calcWeightWithTurnWeight(weighting, iter, false, currEdge.edge) + currEdge.weight;
                 if (Double.isInfinite(tmpWeight)) {
                     continue;
                 }
@@ -89,38 +90,27 @@ public class Dijkstra extends AbstractRoutingAlgorithm {
 
                 SPTEntry nEdge = fromMap.get(traversalId);
                 if (nEdge == null) {
-                    nEdge = new SPTEntry(iter.getEdge(), iter.getAdjNode(), tmpWeight);
-                    nEdge.parent = currEdge;
+                    nEdge = new SPTEntry(iter.getEdge(), iter.getAdjNode(), tmpWeight, currEdge);
                     fromMap.put(traversalId, nEdge);
                     fromHeap.add(nEdge);
                 } else if (nEdge.weight > tmpWeight) {
-                    fromHeap.remove(nEdge);
-                    nEdge.edge = iter.getEdge();
-                    nEdge.weight = tmpWeight;
-                    nEdge.parent = currEdge;
+                    nEdge.setDeleted();
+                    nEdge = new SPTEntry(iter.getEdge(), iter.getAdjNode(), tmpWeight, currEdge);
+                    fromMap.put(traversalId, nEdge);
                     fromHeap.add(nEdge);
                 } else
                     continue;
 
                 updateBestPath(iter, nEdge, traversalId);
             }
-
-            if (fromHeap.isEmpty())
-                break;
-
-            currEdge = fromHeap.poll();
-            if (currEdge == null)
-                throw new AssertionError("Empty edge cannot happen");
         }
     }
 
-    @Override
     protected boolean finished() {
         return currEdge.adjNode == to;
     }
 
-    @Override
-    protected Path extractPath() {
+    private Path extractPath() {
         if (currEdge == null || !finished())
             return createEmptyPath();
 

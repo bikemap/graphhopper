@@ -17,9 +17,6 @@
  */
 package com.graphhopper.routing;
 
-import com.graphhopper.routing.util.DefaultEdgeFilter;
-import com.graphhopper.routing.util.EdgeFilter;
-import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
@@ -36,13 +33,12 @@ import java.util.List;
 public abstract class AbstractRoutingAlgorithm implements RoutingAlgorithm {
     protected final Graph graph;
     protected final Weighting weighting;
-    protected final FlagEncoder flagEncoder;
     protected final TraversalMode traversalMode;
-    protected NodeAccess nodeAccess;
-    protected EdgeExplorer edgeExplorer;
-    protected EdgeFilter inEdgeFilter;
-    protected EdgeFilter outEdgeFilter;
+    protected final NodeAccess nodeAccess;
+    protected final EdgeExplorer edgeExplorer;
     protected int maxVisitedNodes = Integer.MAX_VALUE;
+    protected long timeoutMillis = Long.MAX_VALUE;
+    private long finishTimeMillis = Long.MAX_VALUE;
     private boolean alreadyRun;
 
     /**
@@ -54,18 +50,20 @@ public abstract class AbstractRoutingAlgorithm implements RoutingAlgorithm {
         if (weighting.hasTurnCosts() && !traversalMode.isEdgeBased())
             throw new IllegalStateException("Weightings supporting turn costs cannot be used with node-based traversal mode");
         this.weighting = weighting;
-        this.flagEncoder = weighting.getFlagEncoder();
         this.traversalMode = traversalMode;
         this.graph = graph;
         this.nodeAccess = graph.getNodeAccess();
-        inEdgeFilter = DefaultEdgeFilter.inEdges(flagEncoder.getAccessEnc());
-        outEdgeFilter = DefaultEdgeFilter.outEdges(flagEncoder.getAccessEnc());
         edgeExplorer = graph.createEdgeExplorer();
     }
 
     @Override
     public void setMaxVisitedNodes(int numberOfNodes) {
         this.maxVisitedNodes = numberOfNodes;
+    }
+
+    @Override
+    public void setTimeoutMillis(long timeoutMillis) {
+        this.timeoutMillis = timeoutMillis;
     }
 
     protected boolean accept(EdgeIteratorState iter, int prevOrNextEdgeId) {
@@ -81,23 +79,13 @@ public abstract class AbstractRoutingAlgorithm implements RoutingAlgorithm {
         alreadyRun = true;
     }
 
-    /**
-     * To be overwritten from extending class. Should we make this available in RoutingAlgorithm
-     * interface?
-     * <p>
-     *
-     * @return true if finished.
-     */
-    protected abstract boolean finished();
-
-    /**
-     * To be overwritten from extending class. Should we make this available in RoutingAlgorithm
-     * interface?
-     * <p>
-     *
-     * @return true if finished.
-     */
-    protected abstract Path extractPath();
+    protected void setupFinishTime() {
+        try {
+            this.finishTimeMillis = Math.addExact(System.currentTimeMillis(), timeoutMillis);
+        } catch (ArithmeticException e) {
+            this.finishTimeMillis = Long.MAX_VALUE;
+        }
+    }
 
     @Override
     public List<Path> calcPaths(int from, int to) {
@@ -121,4 +109,9 @@ public abstract class AbstractRoutingAlgorithm implements RoutingAlgorithm {
     protected boolean isMaxVisitedNodesExceeded() {
         return maxVisitedNodes < getVisitedNodes();
     }
+
+    protected boolean isTimeoutExceeded() {
+        return finishTimeMillis < Long.MAX_VALUE && System.currentTimeMillis() > finishTimeMillis;
+    }
+
 }

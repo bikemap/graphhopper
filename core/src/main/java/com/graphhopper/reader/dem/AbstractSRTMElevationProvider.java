@@ -19,13 +19,12 @@ package com.graphhopper.reader.dem;
 
 import com.graphhopper.coll.GHIntObjectHashMap;
 import com.graphhopper.storage.DataAccess;
-import com.graphhopper.util.BitUtil;
 import com.graphhopper.util.Downloader;
+import com.graphhopper.util.Helper;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.SocketTimeoutException;
 
 /**
@@ -33,9 +32,7 @@ import java.net.SocketTimeoutException;
  *
  * @author Robin Boldt
  */
-public abstract class AbstractSRTMElevationProvider extends AbstractElevationProvider {
-
-    private static final BitUtil BIT_UTIL = BitUtil.BIG;
+public abstract class AbstractSRTMElevationProvider extends TileBasedElevationProvider {
     private final int DEFAULT_WIDTH;
     private final int MIN_LAT;
     private final int MAX_LAT;
@@ -99,10 +96,10 @@ public abstract class AbstractSRTMElevationProvider extends AbstractElevationPro
             int minLon = down(lon);
 
             String fileName = getFileName(lat, lon);
-            if (fileName == null)
+            if (fileName == null || (Helper.isEmpty(baseUrl) && !new File(fileName).exists()))
                 return 0;
 
-            DataAccess heights = getDirectory().find("dem" + intKey);
+            DataAccess heights = getDirectory().create("dem" + intKey);
             boolean loadExisting = false;
             try {
                 loadExisting = heights.loadExisting();
@@ -119,8 +116,8 @@ public abstract class AbstractSRTMElevationProvider extends AbstractElevationPro
                     demProvider.setHeights(heights);
                     demProvider.setSeaLevel(true);
                     // use small size on disc and in-memory
-                    heights.setSegmentSize(100).create(10).
-                            flush();
+                    heights.create(10)
+                            .flush();
                     return 0;
                 }
             }
@@ -143,10 +140,13 @@ public abstract class AbstractSRTMElevationProvider extends AbstractElevationPro
 
     private void updateHeightsFromFile(double lat, double lon, DataAccess heights) throws FileNotFoundException {
         try {
-            byte[] bytes = getByteArrayFromFile(lat, lon);
+            String zippedURL = baseUrl + getDownloadURL(lat, lon);
+            File zipFile = new File(cacheDir, new File(zippedURL).getName());
+            if (!zipFile.exists()) downloadToFile(zipFile, zippedURL);
+            byte[] bytes = readFile(zipFile);
             heights.create(bytes.length);
             for (int bytePos = 0; bytePos < bytes.length; bytePos += 2) {
-                short val = BIT_UTIL.toShort(bytes, bytePos);
+                short val = toShort(bytes, bytePos);
                 if (val < -1000 || val > 12000)
                     val = Short.MIN_VALUE;
 
@@ -163,29 +163,27 @@ public abstract class AbstractSRTMElevationProvider extends AbstractElevationPro
         }
     }
 
-    private byte[] getByteArrayFromFile(double lat, double lon) throws InterruptedException, IOException {
-        String zippedURL = baseUrl + getDownloadURL(lat, lon);
-        File file = new File(cacheDir, new File(zippedURL).getName());
-        InputStream is;
-        // get zip file if not already in cacheDir
-        if (!file.exists())
-            for (int i = 0; i < 3; i++) {
-                try {
-                    downloader.downloadFile(zippedURL, file.getAbsolutePath());
-                    break;
-                } catch (SocketTimeoutException ex) {
-                    // just try again after a little nap
-                    Thread.sleep(2000);
-                } catch (FileNotFoundException ex) {
-                    if (zippedURL.contains(".hgt.zip")) {
-                        zippedURL = zippedURL.replace(".hgt.zip", "hgt.zip");
-                    } else {
-                        throw ex;
-                    }
+    // we need big endianess to read the SRTM files
+    final short toShort(byte[] b, int offset) {
+        return (short) ((b[offset] & 0xFF) << 8 | (b[offset + 1] & 0xFF));
+    }
+
+    private void downloadToFile(File file, String zippedURL) throws InterruptedException, IOException {
+        for (int i = 0; i < 3; i++) {
+            try {
+                downloader.downloadFile(zippedURL, file.getAbsolutePath());
+                break;
+            } catch (SocketTimeoutException ex) {
+                // just try again after a little nap
+                Thread.sleep(2000);
+            } catch (FileNotFoundException ex) {
+                if (zippedURL.contains(".hgt.zip")) {
+                    zippedURL = zippedURL.replace(".hgt.zip", "hgt.zip");
+                } else {
+                    throw ex;
                 }
             }
-
-        return readFile(file);
+        }
     }
 
     protected String getPaddedLonString(int lonInt) {
@@ -205,5 +203,15 @@ public abstract class AbstractSRTMElevationProvider extends AbstractElevationPro
     }
 
     abstract byte[] readFile(File file) throws IOException;
+
+    /**
+     * Return the local file name without file ending, has to be lower case, because DataAccess only supports lower case names.
+     */
+    abstract String getFileName(double lat, double lon);
+
+    /**
+     * Returns the complete URL to download the file
+     */
+    abstract String getDownloadURL(double lat, double lon);
 
 }

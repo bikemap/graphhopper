@@ -45,13 +45,13 @@ import java.util.List;
  * @author Robin Boldt
  */
 public class PathMerger {
-    private static final DouglasPeucker DP = new DouglasPeucker();
+    private static final RamerDouglasPeucker RDP = new RamerDouglasPeucker();
     private final Graph graph;
     private final Weighting weighting;
 
     private boolean enableInstructions = true;
     private boolean simplifyResponse = true;
-    private DouglasPeucker douglasPeucker = DP;
+    private RamerDouglasPeucker ramerDouglasPeucker = RDP;
     private boolean calcPoints = true;
     private PathDetailsBuilderFactory pathBuilderFactory;
     private List<String> requestedPathDetails = Collections.emptyList();
@@ -59,7 +59,7 @@ public class PathMerger {
 
     public PathMerger(Graph graph, Weighting weighting) {
         this.graph = graph;
-        this.weighting = weighting;
+        this.weighting = graph.wrapWeighting(weighting);
     }
 
     public PathMerger setCalcPoints(boolean calcPoints) {
@@ -67,8 +67,8 @@ public class PathMerger {
         return this;
     }
 
-    public PathMerger setDouglasPeucker(DouglasPeucker douglasPeucker) {
-        this.douglasPeucker = douglasPeucker;
+    public PathMerger setRamerDouglasPeucker(RamerDouglasPeucker ramerDouglasPeucker) {
+        this.ramerDouglasPeucker = ramerDouglasPeucker;
         return this;
     }
 
@@ -88,7 +88,8 @@ public class PathMerger {
         return this;
     }
 
-    public void doWork(ResponsePath responsePath, List<Path> paths, EncodedValueLookup evLookup, Translation tr) {
+    public ResponsePath doWork(PointList waypoints, List<Path> paths, EncodedValueLookup evLookup, Translation tr) {
+        ResponsePath responsePath = new ResponsePath();
         int origPoints = 0;
         long fullTimeInMillis = 0;
         double fullWeight = 0;
@@ -98,6 +99,7 @@ public class PathMerger {
         InstructionList fullInstructions = new InstructionList(tr);
         PointList fullPoints = PointList.EMPTY;
         List<String> description = new ArrayList<>();
+        List<Integer> wayPointIndices = new ArrayList<>();
         for (int pathIndex = 0; pathIndex < paths.size(); pathIndex++) {
             Path path = paths.get(pathIndex);
             if (!path.isFound()) {
@@ -134,19 +136,18 @@ public class PathMerger {
                 }
 
                 fullPoints.add(tmpPoints);
-                responsePath.addPathDetails(PathDetailsFromEdges.calcDetails(path, evLookup, weighting, requestedPathDetails, pathBuilderFactory, origPoints));
+                responsePath.addPathDetails(PathDetailsFromEdges.calcDetails(path, evLookup, weighting, requestedPathDetails, pathBuilderFactory, origPoints, graph));
+                wayPointIndices.add(origPoints);
+                if (pathIndex == paths.size() - 1)
+                    wayPointIndices.add(fullPoints.size() - 1);
                 origPoints = fullPoints.size();
             }
 
             allFound = allFound && path.isFound();
         }
 
-        if (!fullPoints.isEmpty()) {
-            String debug = responsePath.getDebugInfo() + ", simplify (" + origPoints + "->" + fullPoints.getSize() + ")";
-            responsePath.addDebugInfo(debug);
-            if (fullPoints.is3D)
-                calcAscendDescend(responsePath, fullPoints);
-        }
+        if (!fullPoints.isEmpty() && fullPoints.is3D)
+            calcAscendDescend(responsePath, fullPoints);
 
         if (enableInstructions) {
             fullInstructions = updateInstructionsWithContext(fullInstructions);
@@ -154,18 +155,30 @@ public class PathMerger {
         }
 
         if (!allFound) {
-            responsePath.addError(new ConnectionNotFoundException("Connection between locations not found", Collections.<String, Object>emptyMap()));
+            responsePath.addError(new ConnectionNotFoundException("Connection between locations not found", Collections.emptyMap()));
+        }
+
+        // make sure the way point indices actually point to the points in waypoints...
+        if (allFound && !waypoints.isEmpty()) { // we use empty waypoints for map-matching...
+            for (int i = 0; i < wayPointIndices.size(); i++) {
+                int index = wayPointIndices.get(i);
+                if (waypoints.getLat(i) != fullPoints.getLat(index) || waypoints.getLon(i) != fullPoints.getLon(index))
+                    throw new IllegalStateException("waypoints are not included in points, or waypoint indices are wrong");
+            }
         }
 
         responsePath.setDescription(description).
                 setPoints(fullPoints).
                 setRouteWeight(fullWeight).
                 setDistance(fullDistance).
-                setTime(fullTimeInMillis);
+                setTime(fullTimeInMillis).
+                setWaypoints(waypoints).
+                setWaypointIndices(wayPointIndices);
 
         if (allFound && simplifyResponse && (calcPoints || enableInstructions)) {
-            PathSimplification.simplify(responsePath, douglasPeucker, enableInstructions);
+            PathSimplification.simplify(responsePath, ramerDouglasPeucker, enableInstructions);
         }
+        return responsePath;
     }
 
     /**
@@ -216,9 +229,9 @@ public class PathMerger {
     private void calcAscendDescend(final ResponsePath responsePath, final PointList pointList) {
         double ascendMeters = 0;
         double descendMeters = 0;
-        double lastEle = pointList.getElevation(0);
+        double lastEle = pointList.getEle(0);
         for (int i = 1; i < pointList.size(); ++i) {
-            double ele = pointList.getElevation(i);
+            double ele = pointList.getEle(i);
             double diff = Math.abs(ele - lastEle);
 
             if (ele > lastEle)

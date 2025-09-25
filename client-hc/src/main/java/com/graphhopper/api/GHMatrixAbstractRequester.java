@@ -33,6 +33,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import static com.graphhopper.api.GraphHopperMatrixWeb.*;
+import static com.graphhopper.api.GraphHopperWeb.X_GH_CLIENT_VERSION;
 
 /**
  * @author Peter Karich
@@ -53,14 +54,14 @@ public abstract class GHMatrixAbstractRequester {
     public GHMatrixAbstractRequester(String serviceUrl) {
         this(serviceUrl, new OkHttpClient.Builder().
                 connectTimeout(5, TimeUnit.SECONDS).
-                readTimeout(5, TimeUnit.SECONDS).build());
+                readTimeout(5, TimeUnit.SECONDS).build(), true);
     }
 
-    public GHMatrixAbstractRequester(String serviceUrl, OkHttpClient downloader) {
+    public GHMatrixAbstractRequester(String serviceUrl, OkHttpClient client, boolean doRequestGzip) {
         if (serviceUrl.endsWith("/")) {
             serviceUrl = serviceUrl.substring(0, serviceUrl.length() - 1);
         }
-        this.downloader = downloader;
+        this.downloader = doRequestGzip ? client.newBuilder().addInterceptor(new GzipRequestInterceptor()).build() : client;
         this.serviceUrl = serviceUrl;
 
         ignoreSet.add("key");
@@ -79,17 +80,30 @@ public abstract class GHMatrixAbstractRequester {
         return downloader;
     }
 
-    protected Collection<String> createOutArrayList(GHMRequest ghRequest) {
-        return ghRequest.getOutArrays().isEmpty() ? Collections.singletonList("weights") : ghRequest.getOutArrays();
-    }
+    protected JsonNode createPostRequest(GHMRequest ghRequest) {
+        if (ghRequest.getHints().getObject("profile", null) != null)
+            throw new IllegalArgumentException("use setProfile instead of hint 'profile'");
+        if (ghRequest.getProfile() == null)
+            throw new IllegalArgumentException("profile cannot be empty");
+        if (ghRequest.getHints().getObject("fail_fast", null) != null)
+            throw new IllegalArgumentException("use setFailFast instead of hint 'fail_fast'");
 
-    protected JsonNode createPostRequest(GHMRequest ghRequest, Collection<String> outArraysList) {
         ObjectNode requestJson = objectMapper.createObjectNode();
-        if (ghRequest.identicalLists) {
-            putPoints(requestJson, "points", ghRequest.getFromPoints());
-            putStrings(requestJson, "point_hints", ghRequest.getFromPointHints());
-            putStrings(requestJson, "curbsides", ghRequest.getFromCurbsides());
+        if (ghRequest.getPoints() != null) {
+            if (ghRequest.getFromPoints() != null)
+                throw new IllegalArgumentException("if points are set do not use setFromPoints");
+            if (ghRequest.getToPoints() != null)
+                throw new IllegalArgumentException("if points are set do not use setToPoints");
+
+            putPoints(requestJson, "points", ghRequest.getPoints());
+            putStrings(requestJson, "point_hints", ghRequest.getPointHints());
+            putStrings(requestJson, "curbsides", ghRequest.getCurbsides());
         } else {
+            if (ghRequest.getFromPoints() == null)
+                throw new IllegalArgumentException("if points are not set you have to use setFromPoints but was null");
+            if (ghRequest.getToPoints() == null)
+                throw new IllegalArgumentException("if points are not set you have to use setToPoints but was null");
+
             putPoints(requestJson, "from_points", ghRequest.getFromPoints());
             putStrings(requestJson, "from_point_hints", ghRequest.getFromPointHints());
 
@@ -101,10 +115,9 @@ public abstract class GHMatrixAbstractRequester {
         }
 
         putStrings(requestJson, "snap_preventions", ghRequest.getSnapPreventions());
-        putStrings(requestJson, "out_arrays", outArraysList);
-        requestJson.put("vehicle", ghRequest.getHints().getString("vehicle", ""));
-        // requestJson.put("elevation", ghRequest.getHints().getBool("elevation", false));
+        putStrings(requestJson, "out_arrays", ghRequest.getOutArrays());
         requestJson.put("fail_fast", ghRequest.getFailFast());
+        requestJson.put("profile", ghRequest.getProfile());
 
         Map<String, Object> hintsMap = ghRequest.getHints().toMap();
         for (String hintKey : hintsMap.keySet()) {
@@ -296,6 +309,7 @@ public abstract class GHMatrixAbstractRequester {
     protected String postJson(String url, JsonNode data) throws IOException {
         String stringData = data.toString();
         Request.Builder builder = new Request.Builder().url(url).post(RequestBody.create(MT_JSON, stringData));
+        builder.header(X_GH_CLIENT_VERSION, Version.GH_VERSION_FROM_MAVEN);
         // force avoiding our GzipRequestInterceptor for smaller requests ~30 locations
         if (stringData.length() < maxUnzippedLength)
             builder.header("Content-Encoding", "identity");
@@ -310,7 +324,7 @@ public abstract class GHMatrixAbstractRequester {
     }
 
     private void putStrings(ObjectNode requestJson, String name, Collection<String> stringList) {
-        if (stringList.isEmpty())
+        if (stringList == null || stringList.isEmpty())
             return;
         ArrayNode outList = objectMapper.createArrayNode();
         for (String str : stringList) {

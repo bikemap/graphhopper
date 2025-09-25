@@ -15,11 +15,11 @@ public class GraphHopperMatrixWeb {
     private String key;
 
     public GraphHopperMatrixWeb() {
-        this(new GHMatrixBatchRequester());
+        this(new GHMatrixSyncRequester());
     }
 
     public GraphHopperMatrixWeb(String serviceUrl) {
-        this(new GHMatrixBatchRequester(serviceUrl));
+        this(new GHMatrixSyncRequester(serviceUrl));
     }
 
     public GraphHopperMatrixWeb(GHMatrixAbstractRequester requester) {
@@ -38,9 +38,6 @@ public class GraphHopperMatrixWeb {
     public MatrixResponse route(GHMRequest request) {
         if (!Helper.isEmpty(key))
             request.getHints().putObject(KEY, key);
-        if (!request.getPathDetails().isEmpty())
-            throw new IllegalArgumentException("Path details are not supported for the Matrix API");
-        request.compactPointHints();
         return requester.route(request);
     }
 }

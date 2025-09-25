@@ -1,22 +1,31 @@
 package com.graphhopper.routing.util.parsers;
 
 import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.reader.osm.conditional.DateRangeParser;
+import com.graphhopper.routing.ev.ArrayEdgeIntAccess;
 import com.graphhopper.routing.ev.BooleanEncodedValue;
-import com.graphhopper.routing.ev.EnumEncodedValue;
+import com.graphhopper.routing.ev.EdgeIntAccess;
 import com.graphhopper.routing.ev.GetOffBike;
-import com.graphhopper.routing.ev.RoadClass;
-import com.graphhopper.routing.util.BikeFlagEncoder;
 import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.util.VehicleEncodedValues;
 import com.graphhopper.storage.IntsRef;
-import org.junit.Test;
+import com.graphhopper.util.PMap;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class OSMGetOffBikeParserTest {
+    private final BooleanEncodedValue offBikeEnc = GetOffBike.create();
+    private final BikeAccessParser accessParser;
+    private final OSMGetOffBikeParser getOffParser;
 
-    private EncodingManager em = EncodingManager.start().add(new BikeFlagEncoder()).build();
-    private BooleanEncodedValue offBikeEnc = em.getBooleanEncodedValue(GetOffBike.KEY);
-    private EnumEncodedValue<RoadClass> roadClassEnc = em.getEnumEncodedValue(RoadClass.KEY, RoadClass.class);
+    public OSMGetOffBikeParserTest() {
+        EncodingManager em = new EncodingManager.Builder().add(offBikeEnc).add(VehicleEncodedValues.bike(new PMap()).getAccessEnc()).build();
+        accessParser = new BikeAccessParser(em, new PMap());
+        accessParser.init(new DateRangeParser());
+        getOffParser = new OSMGetOffBikeParser(offBikeEnc, accessParser.getAccessEnc());
+    }
 
     @Test
     public void testHandleCommonWayTags() {
@@ -40,15 +49,16 @@ public class OSMGetOffBikeParserTest {
         assertFalse(isGetOffBike(way));
 
         way = new ReaderWay(1);
-        way.setTag("highway", "cycleway");
-        assertEquals(getRoadClass(way), RoadClass.CYCLEWAY);
-
         way.setTag("highway", "footway");
         way.setTag("surface", "grass");
         assertTrue(isGetOffBike(way));
         way.setTag("bicycle", "yes");
         assertFalse(isGetOffBike(way));
         way.setTag("bicycle", "designated");
+        assertFalse(isGetOffBike(way));
+        way.setTag("bicycle", "official");
+        assertFalse(isGetOffBike(way));
+        way.setTag("bicycle", "permissive");
         assertFalse(isGetOffBike(way));
 
         way = new ReaderWay(1);
@@ -71,26 +81,57 @@ public class OSMGetOffBikeParserTest {
         assertFalse(isGetOffBike(way));
 
         way = new ReaderWay(1);
+        way.setTag("highway", "track");
+        assertFalse(isGetOffBike(way));
+
+        way = new ReaderWay(1);
         way.setTag("highway", "pedestrian");
         assertTrue(isGetOffBike(way));
 
+        // situation for path is unclear, see #2777, let's mark it only if foot=designated
         way = new ReaderWay(1);
         way.setTag("highway", "path");
         way.setTag("surface", "concrete");
-        assertTrue(isGetOffBike(way));
+        assertFalse(isGetOffBike(way));
+        way.setTag("bicycle", "yes");
+        assertFalse(isGetOffBike(way));
+        way.setTag("bicycle", "designated");
+        assertFalse(isGetOffBike(way));
+        way.setTag("bicycle", "official");
+        assertFalse(isGetOffBike(way));
+        way.setTag("bicycle", "permissive");
+        assertFalse(isGetOffBike(way));
 
         way = new ReaderWay(1);
-        way.setTag("highway", "track");
-        assertFalse(isGetOffBike(way));
+        way.setTag("highway", "path");
+        way.setTag("foot", "yes");
+        assertFalse(isGetOffBike(way)); // for now only designated will trigger true
+        way.setTag("foot", "designated");
+        assertTrue(isGetOffBike(way));
     }
 
-    private RoadClass getRoadClass(ReaderWay way) {
-        IntsRef edgeFlags = em.handleWayTags(way, new EncodingManager.AcceptWay().put("bike", EncodingManager.Access.WAY), em.createRelationFlags());
-        return roadClassEnc.getEnum(false, edgeFlags);
+    @Test
+    public void testOneway() {
+        ReaderWay way = new ReaderWay(1);
+        way.setTag("highway", "primary");
+        way.setTag("oneway", "yes");
+
+        EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
+        IntsRef rel = new IntsRef(1);
+        accessParser.handleWayTags(edgeId, edgeIntAccess, way, new IntsRef(1));
+        getOffParser.handleWayTags(edgeId, edgeIntAccess, way, new IntsRef(1));
+
+        assertFalse(offBikeEnc.getBool(false, edgeId, edgeIntAccess));
+        assertTrue(offBikeEnc.getBool(true, edgeId, edgeIntAccess));
     }
 
     private boolean isGetOffBike(ReaderWay way) {
-        IntsRef edgeFlags = em.handleWayTags(way, new EncodingManager.AcceptWay().put("bike", EncodingManager.Access.WAY), em.createRelationFlags());
-        return offBikeEnc.getBool(false, edgeFlags);
+        EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
+        IntsRef rel = new IntsRef(1);
+        accessParser.handleWayTags(edgeId, edgeIntAccess, way, rel);
+        getOffParser.handleWayTags(edgeId, edgeIntAccess, way, rel);
+        return offBikeEnc.getBool(false, edgeId, edgeIntAccess);
     }
 }

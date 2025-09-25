@@ -18,7 +18,11 @@
 package com.graphhopper.util;
 
 import com.graphhopper.routing.ev.*;
+import com.graphhopper.search.KVStorage;
+import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.IntsRef;
+
+import java.util.List;
 
 /**
  * This interface represents an edge and is one possible state of an EdgeIterator.
@@ -52,18 +56,18 @@ public interface EdgeIteratorState {
         }
 
         @Override
-        public int getVersion() {
-            return 1;
-        }
-
-        @Override
-        public boolean getBool(boolean reverse, IntsRef ref) {
+        public boolean getBool(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess) {
             return reverse;
         }
 
         @Override
-        public void setBool(boolean reverse, IntsRef ref, boolean value) {
+        public void setBool(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess, boolean value) {
             throw new IllegalStateException("reverse state cannot be modified");
+        }
+
+        @Override
+        public boolean isStoreTwoDirections() {
+            return false;
         }
     };
 
@@ -74,15 +78,18 @@ public interface EdgeIteratorState {
     int getEdge();
 
     /**
-     * @return the edge id of the first original edge of the current edge. This is needed for shortcuts
-     * in edge-based contraction hierarchies and otherwise simply returns the id of the current edge.
+     * Returns the edge key of the current edge. The edge id can be derived from the edge key by calling
+     * {@link GHUtility#getEdgeFromEdgeKey(int)}, but the edge key also contains information about the
+     * direction of the edge. The edge key is even when the edge is oriented in storage direction and odd
+     * otherwise. You can use the edge key to retrieve an edge state in the associated direction using
+     * {@link Graph#getEdgeIteratorStateForKey(int)}.
      */
-    int getOrigEdgeFirst();
+    int getEdgeKey();
 
     /**
-     * @see #getOrigEdgeFirst()
+     * Like #getEdgeKey, but returns the reverse key.
      */
-    int getOrigEdgeLast();
+    int getReverseEdgeKey();
 
     /**
      * Returns the node used to instantiate the EdgeIterator. Often only used for convenience reasons.
@@ -144,6 +151,8 @@ public interface EdgeIteratorState {
 
     EdgeIteratorState setReverse(BooleanEncodedValue property, boolean value);
 
+    EdgeIteratorState set(BooleanEncodedValue property, boolean fwd, boolean bwd);
+
     int get(IntEncodedValue property);
 
     EdgeIteratorState set(IntEncodedValue property, int value);
@@ -151,6 +160,8 @@ public interface EdgeIteratorState {
     int getReverse(IntEncodedValue property);
 
     EdgeIteratorState setReverse(IntEncodedValue property, int value);
+
+    EdgeIteratorState set(IntEncodedValue property, int fwd, int bwd);
 
     double get(DecimalEncodedValue property);
 
@@ -160,17 +171,58 @@ public interface EdgeIteratorState {
 
     EdgeIteratorState setReverse(DecimalEncodedValue property, double value);
 
-    <T extends Enum> T get(EnumEncodedValue<T> property);
+    EdgeIteratorState set(DecimalEncodedValue property, double fwd, double bwd);
 
-    <T extends Enum> EdgeIteratorState set(EnumEncodedValue<T> property, T value);
+    <T extends Enum<?>> T get(EnumEncodedValue<T> property);
 
-    <T extends Enum> T getReverse(EnumEncodedValue<T> property);
+    <T extends Enum<?>> EdgeIteratorState set(EnumEncodedValue<T> property, T value);
 
-    <T extends Enum> EdgeIteratorState setReverse(EnumEncodedValue<T> property, T value);
+    <T extends Enum<?>> T getReverse(EnumEncodedValue<T> property);
 
+    <T extends Enum<?>> EdgeIteratorState setReverse(EnumEncodedValue<T> property, T value);
+
+    <T extends Enum<?>> EdgeIteratorState set(EnumEncodedValue<T> property, T fwd, T bwd);
+
+    String get(StringEncodedValue property);
+
+    EdgeIteratorState set(StringEncodedValue property, String value);
+
+    String getReverse(StringEncodedValue property);
+
+    EdgeIteratorState setReverse(StringEncodedValue property, String value);
+
+    EdgeIteratorState set(StringEncodedValue property, String fwd, String bwd);
+
+    /**
+     * Identical to calling getKeyValues().get("name") if name is stored for both directions. Note that for backward
+     * compatibility this method returns an empty String instead of null if there was no KeyPair with key==name stored.
+     *
+     * @return the stored value for the key "name" in the KeyValue list of this EdgeIteratorState.
+     */
     String getName();
 
-    EdgeIteratorState setName(String name);
+    /**
+     * This stores the specified key-value pairs in the storage of this EdgeIteratorState. This is more flexible
+     * compared to the mechanism of flags and EncodedValue and allows storing sparse key value pairs more efficient.
+     * But it might be slow and more inefficient on retrieval. Call this setKeyValues method only once per
+     * EdgeIteratorState as it allocates new space everytime this method is called.
+     */
+    EdgeIteratorState setKeyValues(List<KVStorage.KeyValue> map);
+
+    /**
+     * This method returns KeyValue pairs for both directions in contrast to {@link #getValue(String)}.
+     *
+     * @see #setKeyValues(List)
+     */
+    List<KVStorage.KeyValue> getKeyValues();
+
+    /**
+     * This method returns the *first* value for the specified key and only if stored for the direction of this
+     * EdgeIteratorState. If you need more than one value see also {@link #getKeyValues()}. Avoid storing KeyPairs with
+     * duplicate keys as only the first will be reachable with this method. Currently, there is no support to use this
+     * method in a custom_model, and you should use EncodedValues instead.
+     */
+    Object getValue(String key);
 
     /**
      * Clones this EdgeIteratorState.

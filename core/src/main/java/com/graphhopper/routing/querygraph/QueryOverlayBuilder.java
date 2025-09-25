@@ -20,9 +20,10 @@ package com.graphhopper.routing.querygraph;
 
 import com.carrotsearch.hppc.predicates.IntObjectPredicate;
 import com.graphhopper.coll.GHIntObjectHashMap;
+import com.graphhopper.search.KVStorage;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.IntsRef;
-import com.graphhopper.storage.index.QueryResult;
+import com.graphhopper.storage.index.Snap;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.GHPoint;
 import com.graphhopper.util.shapes.GHPoint3D;
@@ -32,18 +33,20 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
+import static com.graphhopper.util.DistancePlaneProjection.DIST_PLANE;
+
 class QueryOverlayBuilder {
     private final int firstVirtualNodeId;
     private final int firstVirtualEdgeId;
     private final boolean is3D;
     private QueryOverlay queryOverlay;
 
-    public static QueryOverlay build(Graph graph, List<QueryResult> queryResults) {
-        return build(graph.getNodes(), graph.getEdges(), graph.getNodeAccess().is3D(), queryResults);
+    public static QueryOverlay build(Graph graph, List<Snap> snaps) {
+        return build(graph.getNodes(), graph.getEdges(), graph.getNodeAccess().is3D(), snaps);
     }
 
-    public static QueryOverlay build(int firstVirtualNodeId, int firstVirtualEdgeId, boolean is3D, List<QueryResult> queryResults) {
-        return new QueryOverlayBuilder(firstVirtualNodeId, firstVirtualEdgeId, is3D).build(queryResults);
+    public static QueryOverlay build(int firstVirtualNodeId, int firstVirtualEdgeId, boolean is3D, List<Snap> snaps) {
+        return new QueryOverlayBuilder(firstVirtualNodeId, firstVirtualEdgeId, is3D).build(snaps);
     }
 
     private QueryOverlayBuilder(int firstVirtualNodeId, int firstVirtualEdgeId, boolean is3D) {
@@ -52,7 +55,7 @@ class QueryOverlayBuilder {
         this.is3D = is3D;
     }
 
-    private QueryOverlay build(List<QueryResult> resList) {
+    private QueryOverlay build(List<Snap> resList) {
         queryOverlay = new QueryOverlay(resList.size(), is3D);
         buildVirtualEdges(resList);
         buildEdgeChangesAtRealNodes();
@@ -60,23 +63,23 @@ class QueryOverlayBuilder {
     }
 
     /**
-     * For all specified query results calculate the snapped point and if necessary set the closest node
+     * For all specified snaps calculate the snapped point and if necessary set the closest node
      * to a virtual one and reverse the closest edge. Additionally the wayIndex can change if an edge is
      * swapped.
      */
-    private void buildVirtualEdges(List<QueryResult> resList) {
-        GHIntObjectHashMap<List<QueryResult>> edge2res = new GHIntObjectHashMap<>(resList.size());
+    private void buildVirtualEdges(List<Snap> snaps) {
+        GHIntObjectHashMap<List<Snap>> edge2res = new GHIntObjectHashMap<>(snaps.size());
 
         // Phase 1
         // calculate snapped point and swap direction of closest edge if necessary
-        for (QueryResult res : resList) {
-            // Do not create virtual node for a query result if it is directly on a tower node or not found
-            if (res.getSnappedPosition() == QueryResult.Position.TOWER)
+        for (Snap snap : snaps) {
+            // Do not create virtual node for a snap if it is directly on a tower node or not found
+            if (snap.getSnappedPosition() == Snap.Position.TOWER)
                 continue;
 
-            EdgeIteratorState closestEdge = res.getClosestEdge();
+            EdgeIteratorState closestEdge = snap.getClosestEdge();
             if (closestEdge == null)
-                throw new IllegalStateException("Do not call QueryGraph.create with invalid QueryResult " + res);
+                throw new IllegalStateException("Do not call QueryGraph.create with invalid Snap " + snap);
 
             int base = closestEdge.getBaseNode();
 
@@ -87,47 +90,47 @@ class QueryOverlayBuilder {
                 // check for special case #162 where adj == base and force direction via latitude comparison
                 PointList pl = closestEdge.fetchWayGeometry(FetchMode.PILLAR_ONLY);
                 if (pl.size() > 1)
-                    doReverse = pl.getLatitude(0) > pl.getLatitude(pl.size() - 1);
+                    doReverse = pl.getLat(0) > pl.getLat(pl.size() - 1);
             }
 
             if (doReverse) {
                 closestEdge = closestEdge.detach(true);
                 PointList fullPL = closestEdge.fetchWayGeometry(FetchMode.ALL);
-                res.setClosestEdge(closestEdge);
-                if (res.getSnappedPosition() == QueryResult.Position.PILLAR)
+                snap.setClosestEdge(closestEdge);
+                if (snap.getSnappedPosition() == Snap.Position.PILLAR)
                     // ON pillar node
-                    res.setWayIndex(fullPL.getSize() - res.getWayIndex() - 1);
+                    snap.setWayIndex(fullPL.size() - snap.getWayIndex() - 1);
                 else
                     // for case "OFF pillar node"
-                    res.setWayIndex(fullPL.getSize() - res.getWayIndex() - 2);
+                    snap.setWayIndex(fullPL.size() - snap.getWayIndex() - 2);
 
-                if (res.getWayIndex() < 0)
-                    throw new IllegalStateException("Problem with wayIndex while reversing closest edge:" + closestEdge + ", " + res);
+                if (snap.getWayIndex() < 0)
+                    throw new IllegalStateException("Problem with wayIndex while reversing closest edge:" + closestEdge + ", " + snap);
             }
 
             // find multiple results on same edge
             int edgeId = closestEdge.getEdge();
-            List<QueryResult> list = edge2res.get(edgeId);
+            List<Snap> list = edge2res.get(edgeId);
             if (list == null) {
                 list = new ArrayList<>(5);
                 edge2res.put(edgeId, list);
             }
-            list.add(res);
+            list.add(snap);
         }
 
         // Phase 2 - now it is clear which points cut one edge
         // 1. create point lists
         // 2. create virtual edges between virtual nodes and its neighbor (virtual or normal nodes)
-        edge2res.forEach(new IntObjectPredicate<List<QueryResult>>() {
+        edge2res.forEach(new IntObjectPredicate<List<Snap>>() {
             @Override
-            public boolean apply(int edgeId, List<QueryResult> results) {
+            public boolean apply(int edgeId, List<Snap> results) {
                 // we can expect at least one entry in the results
                 EdgeIteratorState closestEdge = results.get(0).getClosestEdge();
                 final PointList fullPL = closestEdge.fetchWayGeometry(FetchMode.ALL);
                 int baseNode = closestEdge.getBaseNode();
-                Collections.sort(results, new Comparator<QueryResult>() {
+                Collections.sort(results, new Comparator<Snap>() {
                     @Override
-                    public int compare(QueryResult o1, QueryResult o2) {
+                    public int compare(Snap o1, Snap o2) {
                         int diff = Integer.compare(o1.getWayIndex(), o2.getWayIndex());
                         if (diff == 0) {
                             return Double.compare(distanceOfSnappedPointToPillarNode(o1), distanceOfSnappedPointToPillarNode(o2));
@@ -136,40 +139,45 @@ class QueryOverlayBuilder {
                         }
                     }
 
-                    private double distanceOfSnappedPointToPillarNode(QueryResult o) {
+                    private double distanceOfSnappedPointToPillarNode(Snap o) {
                         GHPoint snappedPoint = o.getSnappedPoint();
-                        double fromLat = fullPL.getLatitude(o.getWayIndex());
-                        double fromLon = fullPL.getLongitude(o.getWayIndex());
-                        return Helper.DIST_PLANE.calcNormalizedDist(fromLat, fromLon, snappedPoint.lat, snappedPoint.lon);
+                        double fromLat = fullPL.getLat(o.getWayIndex());
+                        double fromLon = fullPL.getLon(o.getWayIndex());
+                        return DistancePlaneProjection.DIST_PLANE.calcNormalizedDist(fromLat, fromLon, snappedPoint.lat, snappedPoint.lon);
                     }
                 });
 
                 GHPoint3D prevPoint = fullPL.get(0);
                 int adjNode = closestEdge.getAdjNode();
-                int origEdgeKey = GHUtility.createEdgeKey(baseNode, adjNode, closestEdge.getEdge(), false);
-                int origRevEdgeKey = GHUtility.createEdgeKey(baseNode, adjNode, closestEdge.getEdge(), true);
+                int origEdgeKey = closestEdge.getEdgeKey();
+                int origRevEdgeKey = closestEdge.getReverseEdgeKey();
                 int prevWayIndex = 1;
                 int prevNodeId = baseNode;
-                int virtNodeId = queryOverlay.getVirtualNodes().getSize() + firstVirtualNodeId;
+                int virtNodeId = queryOverlay.getVirtualNodes().size() + firstVirtualNodeId;
                 boolean addedEdges = false;
 
                 // Create base and adjacent PointLists for all non-equal virtual nodes.
                 // We do so via inserting them at the correct position of fullPL and cutting the
                 // fullPL into the right pieces.
-                for (QueryResult res : results) {
+                for (int i = 0; i < results.size(); i++) {
+                    Snap res = results.get(i);
                     if (res.getClosestEdge().getBaseNode() != baseNode)
                         throw new IllegalStateException("Base nodes have to be identical but were not: " + closestEdge + " vs " + res.getClosestEdge());
 
                     GHPoint3D currSnapped = res.getSnappedPoint();
 
-                    // no new virtual nodes if exactly the same snapped point
-                    if (prevPoint.equals(currSnapped)) {
+                    // no new virtual nodes if very close ("snap" together)
+                    if (Snap.considerEqual(prevPoint.lat, prevPoint.lon, currSnapped.lat, currSnapped.lon)) {
                         res.setClosestNode(prevNodeId);
+                        res.setSnappedPoint(prevPoint);
+                        res.setWayIndex(i == 0 ? 0 : results.get(i - 1).getWayIndex());
+                        res.setSnappedPosition(i == 0 ? Snap.Position.TOWER : results.get(i - 1).getSnappedPosition());
+                        res.setQueryDistance(DIST_PLANE.calcDist(prevPoint.lat, prevPoint.lon, res.getQueryPoint().lat, res.getQueryPoint().lon));
                         continue;
                     }
 
                     queryOverlay.getClosestEdges().add(res.getClosestEdge().getEdge());
-                    boolean isPillar = res.getSnappedPosition() == QueryResult.Position.PILLAR;
+                    boolean isPillar = res.getSnappedPosition() == Snap.Position.PILLAR;
                     createEdges(origEdgeKey, origRevEdgeKey,
                             prevPoint, prevWayIndex, isPillar,
                             res.getSnappedPoint(), res.getWayIndex(),
@@ -195,7 +203,7 @@ class QueryOverlayBuilder {
                 if (addedEdges)
                     createEdges(origEdgeKey, origRevEdgeKey,
                             prevPoint, prevWayIndex, false,
-                            fullPL.get(fullPL.getSize() - 1), fullPL.getSize() - 2,
+                            fullPL.get(fullPL.size() - 1), fullPL.size() - 2,
                             fullPL, closestEdge, virtNodeId - 1, adjNode);
 
                 return true;
@@ -220,15 +228,16 @@ class QueryOverlayBuilder {
         assert basePoints.size() >= 2 : "basePoints must have at least two points";
 
         PointList baseReversePoints = basePoints.clone(true);
-        double baseDistance = basePoints.calcDistance(Helper.DIST_PLANE);
-        int virtEdgeId = firstVirtualEdgeId + queryOverlay.getNumVirtualEdges();
+        double baseDistance = DistancePlaneProjection.DIST_PLANE.calcDistance(basePoints);
+        int virtEdgeId = firstVirtualEdgeId + queryOverlay.getNumVirtualEdges() / 2;
 
         boolean reverse = closestEdge.get(EdgeIteratorState.REVERSE_STATE);
         // edges between base and snapped point
-        VirtualEdgeIteratorState baseEdge = new VirtualEdgeIteratorState(origEdgeKey,
-                virtEdgeId, prevNodeId, nodeId, baseDistance, closestEdge.getFlags(), closestEdge.getName(), basePoints, reverse);
-        VirtualEdgeIteratorState baseReverseEdge = new VirtualEdgeIteratorState(origRevEdgeKey,
-                virtEdgeId, nodeId, prevNodeId, baseDistance, IntsRef.deepCopyOf(closestEdge.getFlags()), closestEdge.getName(), baseReversePoints, !reverse);
+        List<KVStorage.KeyValue> keyValues = closestEdge.getKeyValues();
+        VirtualEdgeIteratorState baseEdge = new VirtualEdgeIteratorState(origEdgeKey, GHUtility.createEdgeKey(virtEdgeId, false),
+                prevNodeId, nodeId, baseDistance, closestEdge.getFlags(), keyValues, basePoints, reverse);
+        VirtualEdgeIteratorState baseReverseEdge = new VirtualEdgeIteratorState(origRevEdgeKey, GHUtility.createEdgeKey(virtEdgeId, true),
+                nodeId, prevNodeId, baseDistance, IntsRef.deepCopyOf(closestEdge.getFlags()), keyValues, baseReversePoints, !reverse);
 
         baseEdge.setReverseEdge(baseReverseEdge);
         baseReverseEdge.setReverseEdge(baseEdge);

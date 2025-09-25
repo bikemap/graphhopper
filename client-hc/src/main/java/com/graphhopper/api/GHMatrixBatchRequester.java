@@ -18,7 +18,7 @@
 package com.graphhopper.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.graphhopper.jackson.PathWrapperDeserializer;
+import com.graphhopper.jackson.ResponsePathDeserializer;
 import com.graphhopper.util.Helper;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -28,8 +28,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
-import java.util.Collection;
 import java.util.concurrent.TimeUnit;
+
+import static com.graphhopper.api.GraphHopperWeb.X_GH_CLIENT_VERSION;
+import static com.graphhopper.api.Version.GH_VERSION_FROM_MAVEN;
 
 /**
  * @author Peter Karich
@@ -46,13 +48,11 @@ public class GHMatrixBatchRequester extends GHMatrixAbstractRequester {
     public GHMatrixBatchRequester(String serviceUrl) {
         this(serviceUrl, new OkHttpClient.Builder().
                 connectTimeout(5, TimeUnit.SECONDS).
-                readTimeout(5, TimeUnit.SECONDS).
-                addInterceptor(new GzipRequestInterceptor()). // gzip the request
-                build());
+                readTimeout(5, TimeUnit.SECONDS).build(), true);
     }
 
-    public GHMatrixBatchRequester(String serviceUrl, OkHttpClient client) {
-        super(serviceUrl, client);
+    public GHMatrixBatchRequester(String serviceUrl, OkHttpClient client, boolean doRequestGzip) {
+        super(serviceUrl, client, doRequestGzip);
     }
 
     /**
@@ -73,15 +73,15 @@ public class GHMatrixBatchRequester extends GHMatrixAbstractRequester {
 
     @Override
     public MatrixResponse route(GHMRequest ghRequest) {
-        Collection<String> outArraysList = createOutArrayList(ghRequest);
-        JsonNode requestJson = createPostRequest(ghRequest, outArraysList);
+        JsonNode requestJson = createPostRequest(ghRequest);
 
-        boolean withTimes = outArraysList.contains("times");
-        boolean withDistances = outArraysList.contains("distances");
-        boolean withWeights = outArraysList.contains("weights");
+        boolean withTimes = ghRequest.getOutArrays().contains("times");
+        boolean withDistances = ghRequest.getOutArrays().contains("distances");
+        boolean withWeights = ghRequest.getOutArrays().contains("weights");
         final MatrixResponse matrixResponse = new MatrixResponse(
-                ghRequest.getFromPoints().size(),
-                ghRequest.getToPoints().size(), withTimes, withDistances, withWeights);
+                ghRequest.getPoints() == null ? ghRequest.getFromPoints().size() : ghRequest.getPoints().size(),
+                ghRequest.getPoints() == null ? ghRequest.getToPoints().size() : ghRequest.getPoints().size(),
+                withTimes, withDistances, withWeights);
         try {
             String postUrl = buildURLNoHints("/calculate", ghRequest);
             String postResponseStr = postJson(postUrl, requestJson);
@@ -92,7 +92,7 @@ public class GHMatrixBatchRequester extends GHMatrixAbstractRequester {
 
             JsonNode responseJson = fromStringToJSON(postUrl, postResponseStr);
             if (responseJson.has("message")) {
-                matrixResponse.addErrors(PathWrapperDeserializer.readErrors(objectMapper, responseJson));
+                matrixResponse.addErrors(ResponsePathDeserializer.readErrors(objectMapper, responseJson));
                 return matrixResponse;
             }
             if (!responseJson.has("job_id")) {
@@ -121,7 +121,7 @@ public class GHMatrixBatchRequester extends GHMatrixAbstractRequester {
                 if (debug) {
                     logger.info(i + " GET URL:" + getUrl + ", response: " + getResponseStr);
                 }
-                matrixResponse.addErrors(PathWrapperDeserializer.readErrors(objectMapper, getResponseJson));
+                matrixResponse.addErrors(ResponsePathDeserializer.readErrors(objectMapper, getResponseJson));
                 if (matrixResponse.hasErrors()) {
                     break;
                 }
@@ -133,7 +133,7 @@ public class GHMatrixBatchRequester extends GHMatrixAbstractRequester {
 
                 if ("finished".equals(status)) {
                     JsonNode solution = getResponseJson.get("solution");
-                    matrixResponse.addErrors(readUsableEntityError(outArraysList, solution));
+                    matrixResponse.addErrors(readUsableEntityError(ghRequest.getOutArrays(), solution));
                     if (!matrixResponse.hasErrors())
                         fillResponseFromJson(matrixResponse, solution, ghRequest.getFailFast());
 
@@ -156,7 +156,9 @@ public class GHMatrixBatchRequester extends GHMatrixAbstractRequester {
     }
 
     protected String getJson(String url) throws IOException {
-        Request okRequest = new Request.Builder().url(url).build();
+        Request okRequest = new Request.Builder().url(url)
+                .header(X_GH_CLIENT_VERSION, GH_VERSION_FROM_MAVEN)
+                .build();
         ResponseBody body = null;
         try {
             body = getDownloader().newCall(okRequest).execute().body();

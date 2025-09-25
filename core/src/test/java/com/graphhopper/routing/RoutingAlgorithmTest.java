@@ -19,45 +19,47 @@ package com.graphhopper.routing;
 
 import com.carrotsearch.hppc.IntArrayList;
 import com.carrotsearch.hppc.IntIndexedContainer;
+import com.graphhopper.routing.ch.CHRoutingAlgorithmFactory;
 import com.graphhopper.routing.ch.PrepareContractionHierarchies;
-import com.graphhopper.routing.ev.BooleanEncodedValue;
 import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValueImpl;
 import com.graphhopper.routing.querygraph.QueryGraph;
+import com.graphhopper.routing.querygraph.QueryRoutingCHGraph;
+import com.graphhopper.routing.util.AllEdgesIterator;
 import com.graphhopper.routing.util.EdgeFilter;
 import com.graphhopper.routing.util.EncodingManager;
-import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.routing.util.TraversalMode;
-import com.graphhopper.routing.weighting.FastestWeighting;
-import com.graphhopper.routing.weighting.ShortestWeighting;
-import com.graphhopper.routing.weighting.TurnCostProvider;
-import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.routing.weighting.*;
 import com.graphhopper.storage.*;
 import com.graphhopper.storage.index.LocationIndex;
 import com.graphhopper.storage.index.LocationIndexTree;
-import com.graphhopper.storage.index.QueryResult;
-import com.graphhopper.util.DistanceCalcEarth;
-import com.graphhopper.util.EdgeIteratorState;
-import com.graphhopper.util.GHUtility;
-import com.graphhopper.util.Helper;
+import com.graphhopper.storage.index.Snap;
+import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.BBox;
 import com.graphhopper.util.shapes.GHPoint;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.ArgumentsProvider;
+import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
-import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Random;
+import java.util.stream.Stream;
 
 import static com.graphhopper.routing.util.TraversalMode.EDGE_BASED;
 import static com.graphhopper.routing.util.TraversalMode.NODE_BASED;
+import static com.graphhopper.util.DistanceCalcEarth.DIST_EARTH;
 import static com.graphhopper.util.GHUtility.updateDistancesFor;
-import static com.graphhopper.util.Helper.DIST_EARTH;
 import static com.graphhopper.util.Parameters.Algorithms.ASTAR_BI;
 import static com.graphhopper.util.Parameters.Algorithms.DIJKSTRA_BI;
-import static org.junit.Assert.*;
+import static com.graphhopper.util.Parameters.Routing.ALGORITHM;
+import static com.graphhopper.util.Parameters.Routing.MAX_VISITED_NODES;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * This test tests the different routing algorithms on small user-defined sample graphs. It tests node- and edge-based
@@ -66,128 +68,240 @@ import static org.junit.Assert.*;
  * because as long as we do not apply turn restrictions we will never take a u-turn.
  * All tests should follow the same pattern:
  * <p>
- * - create a GH storage, you need to pass all the weightings used in this test to {@link #createGHStorage}, such that
+ * - create a GH storage, you need to pass all the weightings used in this test to {@link Fixture#createGHStorage}, such that
  * the according CHGraphs can be created
  * - build the graph: add edges, nodes, set different edge properties etc.
- * - calculate a path using one of the {@link #calcPath} methods and compare it with the expectations
+ * - calculate a path using one of the {@link Fixture#calcPath} methods and compare it with the expectations
  * <p>
- * The tests are run for all algorithms added in {@link #configs()}}.
+ * The tests are run for all algorithms specified in {@link FixtureProvider}}.
  *
  * @author Peter Karich
  * @author easbar
  * @see EdgeBasedRoutingAlgorithmTest for similar tests including turn costs
  */
-@RunWith(Parameterized.class)
 public class RoutingAlgorithmTest {
     private static final Logger LOGGER = LoggerFactory.getLogger(RoutingAlgorithmTest.class);
-    private final EncodingManager encodingManager;
-    private final FlagEncoder carEncoder;
-    private final FlagEncoder footEncoder;
-    private final FlagEncoder bike2Encoder;
-    private final PathCalculator pathCalculator;
-    private final TraversalMode traversalMode;
-    private final Weighting defaultWeighting;
-    private final int defaultMaxVisitedNodes;
 
-    public RoutingAlgorithmTest(PathCalculator pathCalculator, TraversalMode traversalMode) {
-        this.pathCalculator = pathCalculator;
-        this.traversalMode = traversalMode;
-        // vehicles used in this test
-        encodingManager = EncodingManager.create("car,foot,bike2");
-        carEncoder = encodingManager.getEncoder("car");
-        footEncoder = encodingManager.getEncoder("foot");
-        bike2Encoder = encodingManager.getEncoder("bike2");
-        // most tests use the default weighting, but this can be chosen for each test separately
-        defaultWeighting = new ShortestWeighting(carEncoder);
-        // most tests do not limit the number of visited nodes, but this can be chosen for each test separately
-        defaultMaxVisitedNodes = Integer.MAX_VALUE;
+    private static class Fixture {
+        private final EncodingManager encodingManager;
+        private final DecimalEncodedValue carSpeedEnc;
+        private final DecimalEncodedValue footSpeedEnc;
+        private final DecimalEncodedValue bike2SpeedEnc;
+        private final PathCalculator pathCalculator;
+        private final TraversalMode traversalMode;
+        private final Weighting defaultWeighting;
+        private final int defaultMaxVisitedNodes;
+
+        public Fixture(PathCalculator pathCalculator, TraversalMode traversalMode) {
+            this.pathCalculator = pathCalculator;
+            this.traversalMode = traversalMode;
+            carSpeedEnc = new DecimalEncodedValueImpl("car_speed", 5, 5, true);
+            footSpeedEnc = new DecimalEncodedValueImpl("foot_speed", 4, 1, true);
+            bike2SpeedEnc = new DecimalEncodedValueImpl("bike2_speed", 4, 2, true);
+            encodingManager = EncodingManager.start()
+                    .add(carSpeedEnc)
+                    .add(footSpeedEnc)
+                    .add(bike2SpeedEnc).build();
+            // most tests use the default weighting, but this can be chosen for each test separately
+            defaultWeighting = new SpeedWeighting(carSpeedEnc);
+            // most tests do not limit the number of visited nodes, but this can be chosen for each test separately
+            defaultMaxVisitedNodes = Integer.MAX_VALUE;
+        }
+
+        @Override
+        public String toString() {
+            return pathCalculator + ", " + traversalMode;
+        }
+
+        /**
+         * Creates a GH storage supporting the default weighting for CH
+         */
+        private BaseGraph createGHStorage() {
+            return createGHStorage(false);
+        }
+
+        /**
+         * Creates a GH storage supporting the given weightings for CH
+         */
+        private BaseGraph createGHStorage(boolean is3D) {
+            return new BaseGraph.Builder(encodingManager).set3D(is3D)
+                    // this test should never include turn costs, but we have to set it to true to be able to
+                    // run edge-based algorithms
+                    .withTurnCosts(traversalMode.isEdgeBased())
+                    .create();
+        }
+
+        private Path calcPath(BaseGraph graph, int from, int to) {
+            return calcPath(graph, defaultWeighting, from, to);
+        }
+
+        private Path calcPath(BaseGraph graph, Weighting weighting, int from, int to) {
+            return calcPath(graph, weighting, defaultMaxVisitedNodes, from, to);
+        }
+
+        private Path calcPath(BaseGraph graph, Weighting weighting, int maxVisitedNodes, int from, int to) {
+            return pathCalculator.calcPath(graph, weighting, traversalMode, maxVisitedNodes, from, to);
+        }
+
+        private Path calcPath(BaseGraph graph, GHPoint from, GHPoint to) {
+            return calcPath(graph, defaultWeighting, from, to);
+        }
+
+        private Path calcPath(BaseGraph graph, Weighting weighting, GHPoint from, GHPoint to) {
+            return pathCalculator.calcPath(graph, weighting, traversalMode, defaultMaxVisitedNodes, from, to);
+        }
+
+        private Path calcPath(BaseGraph graph, Weighting weighting, int fromNode1, int fromNode2, int toNode1, int toNode2) {
+            // lookup two edges: fromNode1-fromNode2 and toNode1-toNode2
+            Snap from = createSnapBetweenNodes(graph, fromNode1, fromNode2);
+            Snap to = createSnapBetweenNodes(graph, toNode1, toNode2);
+            return pathCalculator.calcPath(graph, weighting, traversalMode, defaultMaxVisitedNodes, from, to);
+        }
+
+        /**
+         * Creates snaps on edge (node1-node2) very close to node1.
+         */
+        private Snap createSnapBetweenNodes(Graph graph, int node1, int node2) {
+            EdgeIteratorState edge = GHUtility.getEdge(graph, node1, node2);
+            if (edge == null)
+                throw new IllegalStateException("edge not found? " + node1 + "-" + node2);
+
+            NodeAccess na = graph.getNodeAccess();
+            double lat = na.getLat(edge.getBaseNode());
+            double lon = na.getLon(edge.getBaseNode());
+            double latAdj = na.getLat(edge.getAdjNode());
+            double lonAdj = na.getLon(edge.getAdjNode());
+            // calculate query point near the base node but not directly on it!
+            Snap res = new Snap(lat + (latAdj - lat) * .1, lon + (lonAdj - lon) * .1);
+            res.setClosestNode(edge.getBaseNode());
+            res.setClosestEdge(edge);
+            res.setWayIndex(0);
+            res.setSnappedPosition(Snap.Position.EDGE);
+            res.calcSnappedPoint(DIST_EARTH);
+            return res;
+        }
+
+        private void compareWithRef(Weighting weighting, BaseGraph graph, PathCalculator refCalculator, GHPoint from, GHPoint to, long seed) {
+            Path path = calcPath(graph, weighting, from, to);
+            Path refPath = refCalculator.calcPath(graph, weighting, traversalMode, defaultMaxVisitedNodes, from, to);
+            assertEquals(refPath.getWeight(), path.getWeight(), 1.e-1, "wrong weight, " + weighting + ", seed: " + seed);
+            assertEquals(refPath.calcNodes(), path.calcNodes(), "wrong nodes, " + weighting + ", seed: " + seed);
+            assertEquals(refPath.getDistance(), path.getDistance(), 1.e-1, "wrong distance, " + weighting + ", seed: " + seed);
+            assertEquals(refPath.getTime(), path.getTime(), 100, "wrong time, " + weighting + ", seed: " + seed);
+        }
+
+        public void resetCH() {
+            // ugly: we need to clear the ch graphs map when we use a new graph. currently we have to use this map because
+            //       otherwise we get an error because of the already existing DataAccess in the DA map in Directory.
+            if (pathCalculator instanceof CHCalculator) {
+                ((CHCalculator) pathCalculator).routingCHGraphs.clear();
+            }
+        }
     }
 
-    @Parameterized.Parameters(name = "{0}, {1}")
-    public static Collection<Object[]> configs() {
-        return Arrays.asList(new Object[][]{
-                {new DijkstraCalculator(), NODE_BASED},
-                {new DijkstraCalculator(), EDGE_BASED},
-                {new BidirDijkstraCalculator(), NODE_BASED},
-                {new BidirDijkstraCalculator(), EDGE_BASED},
-                {new AStarCalculator(), NODE_BASED},
-                {new AStarCalculator(), EDGE_BASED},
-                {new BidirAStarCalculator(), NODE_BASED},
-                {new BidirAStarCalculator(), EDGE_BASED},
-                // so far only supports node-based
-                {new DijkstraOneToManyCalculator(), NODE_BASED},
-                {new CHAStarCalculator(), NODE_BASED},
-                {new CHAStarCalculator(), EDGE_BASED},
-                {new CHDijkstraCalculator(), NODE_BASED},
-                {new CHDijkstraCalculator(), EDGE_BASED}
-        });
+    private static class FixtureProvider implements ArgumentsProvider {
+        @Override
+        public Stream<? extends Arguments> provideArguments(ExtensionContext context) throws Exception {
+            return Stream.of(
+                    new Fixture(new DijkstraCalculator(), NODE_BASED),
+                    new Fixture(new DijkstraCalculator(), EDGE_BASED),
+                    new Fixture(new BidirDijkstraCalculator(), NODE_BASED),
+                    new Fixture(new BidirDijkstraCalculator(), EDGE_BASED),
+                    new Fixture(new AStarCalculator(), NODE_BASED),
+                    new Fixture(new AStarCalculator(), EDGE_BASED),
+                    new Fixture(new BidirAStarCalculator(), NODE_BASED),
+                    new Fixture(new BidirAStarCalculator(), EDGE_BASED),
+                    // so far only supports node-based
+                    new Fixture(new DijkstraOneToManyCalculator(), NODE_BASED),
+                    new Fixture(new CHAStarCalculator(), NODE_BASED),
+                    new Fixture(new CHAStarCalculator(), EDGE_BASED),
+                    new Fixture(new CHDijkstraCalculator(), NODE_BASED),
+                    new Fixture(new CHDijkstraCalculator(), EDGE_BASED)
+            ).map(Arguments::of);
+        }
     }
 
-    @Test
-    public void testCalcShortestPath() {
-        GraphHopperStorage ghStorage = createGHStorage();
-        initTestStorage(ghStorage);
-        Path p = calcPath(ghStorage, 0, 7);
-        assertEquals(p.toString(), nodes(0, 4, 5, 7), p.calcNodes());
-        assertEquals(p.toString(), 62.1, p.getDistance(), .1);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testCalcShortestPath(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initTestStorage(graph, f.carSpeedEnc);
+        Path p = f.calcPath(graph, 0, 7);
+        assertEquals(nodes(0, 4, 5, 7), p.calcNodes(), p.toString());
+        assertEquals(62.1, p.getDistance(), .1, p.toString());
     }
 
-    @Test
-    public void testCalcShortestPath_sourceEqualsTarget() {
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testCalcShortestPath_sourceEqualsTarget(Fixture f) {
         // 0-1-2
-        GraphHopperStorage graph = createGHStorage();
-        graph.edge(0, 1, 1, true);
-        graph.edge(1, 2, 2, true);
+        BaseGraph graph = f.createGHStorage();
+        graph.edge(0, 1).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(1, 2).setDistance(2).set(f.carSpeedEnc, 60, 60);
 
-        Path p = calcPath(graph, 0, 0);
+        Path p = f.calcPath(graph, 0, 0);
         assertPathFromEqualsTo(p, 0);
     }
 
-    @Test
-    public void testSimpleAlternative() {
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testSimpleAlternative(Fixture f) {
         // 0--2--1
         //    |  |
         //    3--4
-        GraphHopperStorage graph = createGHStorage();
-        graph.edge(0, 2, 9, true);
-        graph.edge(2, 1, 2, true);
-        graph.edge(2, 3, 11, true);
-        graph.edge(3, 4, 6, true);
-        graph.edge(4, 1, 9, true);
-        Path p = calcPath(graph, 0, 4);
-        assertEquals(p.toString(), 20, p.getDistance(), 1e-4);
+        BaseGraph graph = f.createGHStorage();
+        graph.edge(0, 2).setDistance(9).set(f.carSpeedEnc, 60, 60);
+        graph.edge(2, 1).setDistance(2).set(f.carSpeedEnc, 60, 60);
+        graph.edge(2, 3).setDistance(11).set(f.carSpeedEnc, 60, 60);
+        graph.edge(3, 4).setDistance(6).set(f.carSpeedEnc, 60, 60);
+        graph.edge(4, 1).setDistance(9).set(f.carSpeedEnc, 60, 60);
+        Path p = f.calcPath(graph, 0, 4);
+        assertEquals(20, p.getDistance(), 1e-4, p.toString());
         assertEquals(nodes(0, 2, 1, 4), p.calcNodes());
     }
 
-    @Test
-    public void testBidirectionalLinear() {
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testBidirectionalLinear(Fixture f) {
         //3--2--1--4--5
-        GraphHopperStorage graph = createGHStorage();
-        graph.edge(2, 1, 2, true);
-        graph.edge(2, 3, 11, true);
-        graph.edge(5, 4, 6, true);
-        graph.edge(4, 1, 9, true);
-        Path p = calcPath(graph, 3, 5);
-        assertEquals(p.toString(), 28, p.getDistance(), 1e-4);
+        BaseGraph graph = f.createGHStorage();
+        graph.edge(2, 1).setDistance(2).set(f.carSpeedEnc, 60, 60);
+        graph.edge(2, 3).setDistance(11).set(f.carSpeedEnc, 60, 60);
+        graph.edge(5, 4).setDistance(6).set(f.carSpeedEnc, 60, 60);
+        graph.edge(4, 1).setDistance(9).set(f.carSpeedEnc, 60, 60);
+        Path p = f.calcPath(graph, 3, 5);
+        assertEquals(28, p.getDistance(), 1e-4, p.toString());
         assertEquals(nodes(3, 2, 1, 4, 5), p.calcNodes());
     }
 
     // see calc-fastest-graph.svg
-    @Test
-    public void testCalcFastestPath() {
-        FastestWeighting fastestWeighting = new FastestWeighting(carEncoder);
-        GraphHopperStorage graph = createGHStorage(false, defaultWeighting, fastestWeighting);
-        initDirectedAndDiffSpeed(graph, carEncoder);
-
-        Path p1 = calcPath(graph, defaultWeighting, 0, 3);
-        assertEquals(nodes(0, 1, 5, 2, 3), p1.calcNodes());
-        assertEquals(p1.toString(), 402.3, p1.getDistance(), .1);
-        assertEquals(p1.toString(), 144823, p1.getTime());
-
-        Path p2 = calcPath(graph, fastestWeighting, 0, 3);
-        assertEquals(nodes(0, 4, 6, 7, 5, 3), p2.calcNodes());
-        assertEquals(p2.toString(), 1261.7, p2.getDistance(), 0.1);
-        assertEquals(p2.toString(), 111442, p2.getTime());
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testCalcFastestPath(Fixture f) {
+        {
+            BaseGraph graph = f.createGHStorage(false);
+            initDirectedAndDiffSpeed(graph, f.carSpeedEnc);
+            // use the same speed for all edges -> we get the *shortest* path
+            AllEdgesIterator iter = graph.getAllEdges();
+            while (iter.next()) {
+                if (iter.get(f.carSpeedEnc) > 0) iter.set(f.carSpeedEnc, 10);
+                if (iter.getReverse(f.carSpeedEnc) > 0) iter.setReverse(f.carSpeedEnc, 10);
+            }
+            Path p1 = f.calcPath(graph, f.defaultWeighting, 0, 3);
+            assertEquals(nodes(0, 1, 5, 2, 3), p1.calcNodes());
+            assertEquals(402.3, p1.getDistance(), .1, p1.toString());
+            assertEquals(40228, p1.getTime(), p1.toString());
+        }
+        {
+            BaseGraph graph = f.createGHStorage(false);
+            initDirectedAndDiffSpeed(graph, f.carSpeedEnc);
+            // this time the speeds are different and we get a longer (but faster) path
+            Weighting weighting = new SpeedWeighting(f.carSpeedEnc);
+            Path p2 = f.calcPath(graph, weighting, 0, 3);
+            assertEquals(nodes(0, 4, 6, 7, 5, 3), p2.calcNodes());
+            assertEquals(1261.7, p2.getDistance(), 0.1, p2.toString());
+            assertEquals(30953, p2.getTime(), p2.toString());
+        }
     }
 
     // 0-1-2-3
@@ -195,27 +309,27 @@ public class RoutingAlgorithmTest {
     // 4-5-- |
     // |/ \--7
     // 6----/
-    static void initDirectedAndDiffSpeed(Graph graph, FlagEncoder enc) {
-        GHUtility.setProperties(graph.edge(0, 1), enc, 10, true, false);
-        GHUtility.setProperties(graph.edge(0, 4), enc, 100, true, false);
+    static void initDirectedAndDiffSpeed(Graph graph, DecimalEncodedValue speedEnc) {
+        graph.edge(0, 1).set(speedEnc, 10, 0);
+        graph.edge(0, 4).set(speedEnc, 100, 0);
 
-        GHUtility.setProperties(graph.edge(1, 4), enc, 10, true, true);
-        GHUtility.setProperties(graph.edge(1, 5), enc, 10, true, true);
-        EdgeIteratorState edge12 = GHUtility.setProperties(graph.edge(1, 2), enc, 10, true, true);
+        graph.edge(1, 4).set(speedEnc, 10, 10);
+        graph.edge(1, 5).set(speedEnc, 10, 10);
+        EdgeIteratorState edge12 = graph.edge(1, 2).set(speedEnc, 10, 10);
 
-        GHUtility.setProperties(graph.edge(5, 2), enc, 10, true, false);
-        GHUtility.setProperties(graph.edge(2, 3), enc, 10, true, false);
+        graph.edge(5, 2).set(speedEnc, 10, 0);
+        graph.edge(2, 3).set(speedEnc, 10, 0);
 
-        EdgeIteratorState edge53 = GHUtility.setProperties(graph.edge(5, 3), enc, 20, true, false);
-        GHUtility.setProperties(graph.edge(3, 7), enc, 10, true, false);
+        EdgeIteratorState edge53 = graph.edge(5, 3).set(speedEnc, 20, 0);
+        graph.edge(3, 7).set(speedEnc, 10, 0);
 
-        GHUtility.setProperties(graph.edge(4, 6), enc, 100, true, false);
-        GHUtility.setProperties(graph.edge(5, 4), enc, 10, true, false);
+        graph.edge(4, 6).set(speedEnc, 100, 0);
+        graph.edge(5, 4).set(speedEnc, 10, 0);
 
-        GHUtility.setProperties(graph.edge(5, 6), enc, 10, true, false);
-        GHUtility.setProperties(graph.edge(7, 5), enc, 100, true, false);
+        graph.edge(5, 6).set(speedEnc, 10, 0);
+        graph.edge(7, 5).set(speedEnc, 100, 0);
 
-        GHUtility.setProperties(graph.edge(6, 7), enc, 100, true, true);
+        graph.edge(6, 7).set(speedEnc, 100, 100);
 
         updateDistancesFor(graph, 0, 0.002, 0);
         updateDistancesFor(graph, 1, 0.002, 0.001);
@@ -230,76 +344,77 @@ public class RoutingAlgorithmTest {
         edge53.setDistance(edge53.getDistance() * 2);
     }
 
-    @Test
-    public void testCalcFootPath() {
-        ShortestWeighting shortestWeighting = new ShortestWeighting(footEncoder);
-        GraphHopperStorage graph = createGHStorage(false, shortestWeighting);
-        initFootVsCar(carEncoder, footEncoder, graph);
-        Path p1 = calcPath(graph, shortestWeighting, 0, 7);
-        assertEquals(p1.toString(), 17000, p1.getDistance(), 1e-6);
-        assertEquals(p1.toString(), 12240 * 1000, p1.getTime());
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testCalcFootPath(Fixture f) {
+        Weighting weighting = new SpeedWeighting(f.footSpeedEnc);
+        BaseGraph graph = f.createGHStorage(false);
+        initFootVsCar(f.carSpeedEnc, f.footSpeedEnc, graph);
+        Path p1 = f.calcPath(graph, weighting, 0, 7);
+        assertEquals(17000, p1.getDistance(), 1e-6, p1.toString());
+        assertEquals(3400 * 1000, p1.getTime(), p1.toString());
         assertEquals(nodes(0, 4, 5, 7), p1.calcNodes());
     }
 
-    static void initFootVsCar(FlagEncoder carEncoder, FlagEncoder footEncoder, Graph graph) {
+    static void initFootVsCar(DecimalEncodedValue carSpeedEnc, DecimalEncodedValue footSpeedEnc, Graph graph) {
         EdgeIteratorState edge = graph.edge(0, 1).setDistance(7000);
-        GHUtility.setProperties(edge, footEncoder, 5, true, true);
-        GHUtility.setProperties(edge, carEncoder, 10, true, false);
+        edge.set(footSpeedEnc, 5, 5);
+        edge.set(carSpeedEnc, 10, 0);
         edge = graph.edge(0, 4).setDistance(5000);
-        GHUtility.setProperties(edge, footEncoder, 5, true, true);
-        GHUtility.setProperties(edge, carEncoder, 20, true, false);
+        edge.set(footSpeedEnc, 5, 5);
+        edge.set(carSpeedEnc, 20, 0);
 
-        GHUtility.setProperties(graph.edge(1, 4).setDistance(7000), carEncoder, 10, true, true);
-        GHUtility.setProperties(graph.edge(1, 5).setDistance(7000), carEncoder, 10, true, true);
+        graph.edge(1, 4).setDistance(7000).set(carSpeedEnc, 10, 10);
+        graph.edge(1, 5).setDistance(7000).set(carSpeedEnc, 10, 10);
         edge = graph.edge(1, 2).setDistance(20000);
-        GHUtility.setProperties(edge, footEncoder, 5, true, true);
-        GHUtility.setProperties(edge, carEncoder, 10, true, true);
+        edge.set(footSpeedEnc, 5, 5);
+        edge.set(carSpeedEnc, 10, 10);
 
-        GHUtility.setProperties(graph.edge(5, 2).setDistance(5000), carEncoder, 10, true, false);
+        graph.edge(5, 2).setDistance(5000).set(carSpeedEnc, 10, 0);
         edge = graph.edge(2, 3).setDistance(5000);
-        GHUtility.setProperties(edge, footEncoder, 5, true, true);
-        GHUtility.setProperties(edge, carEncoder, 10, true, false);
+        edge.set(footSpeedEnc, 5, 5);
+        edge.set(carSpeedEnc, 10, 0);
 
-        GHUtility.setProperties(graph.edge(5, 3).setDistance(11000), carEncoder, 20, true, false);
+        graph.edge(5, 3).setDistance(11000).set(carSpeedEnc, 20, 0);
         edge = graph.edge(3, 7).setDistance(7000);
-        GHUtility.setProperties(edge, footEncoder, 5, true, true);
-        GHUtility.setProperties(edge, carEncoder, 10, true, false);
+        edge.set(footSpeedEnc, 5, 5);
+        edge.set(carSpeedEnc, 10, 0);
 
-        GHUtility.setProperties(graph.edge(4, 6).setDistance(5000), carEncoder, 20, true, false);
+        graph.edge(4, 6).setDistance(5000).set(carSpeedEnc, 20, 0);
         edge = graph.edge(5, 4).setDistance(7000);
-        GHUtility.setProperties(edge, footEncoder, 5, true, true);
-        GHUtility.setProperties(edge, carEncoder, 10, true, false);
+        edge.set(footSpeedEnc, 5, 5);
+        edge.set(carSpeedEnc, 10, 0);
 
-        GHUtility.setProperties(graph.edge(5, 6).setDistance(7000), carEncoder, 10, true, false);
+        graph.edge(5, 6).setDistance(7000).set(carSpeedEnc, 10, 0);
         edge = graph.edge(7, 5).setDistance(5000);
-        GHUtility.setProperties(edge, footEncoder, 5, true, true);
-        GHUtility.setProperties(edge, carEncoder, 20, true, false);
+        edge.set(footSpeedEnc, 5, 5);
+        edge.set(carSpeedEnc, 20, 0);
 
-        GHUtility.setProperties(graph.edge(6, 7).setDistance(5000), carEncoder, 20, true, true);
+        graph.edge(6, 7).setDistance(5000).set(carSpeedEnc, 20, 20);
     }
 
     // see test-graph.svg !
-    static void initTestStorage(Graph graph) {
-        graph.edge(0, 1, 7, true);
-        graph.edge(0, 4, 6, true);
+    static void initTestStorage(Graph graph, DecimalEncodedValue speedEnc) {
+        graph.edge(0, 1).setDistance(7).set(speedEnc, 60, 60);
+        graph.edge(0, 4).setDistance(6).set(speedEnc, 60, 60);
 
-        graph.edge(1, 4, 2, true);
-        graph.edge(1, 5, 8, true);
-        graph.edge(1, 2, 2, true);
+        graph.edge(1, 4).setDistance(2).set(speedEnc, 60, 60);
+        graph.edge(1, 5).setDistance(8).set(speedEnc, 60, 60);
+        graph.edge(1, 2).setDistance(2).set(speedEnc, 60, 60);
 
-        graph.edge(2, 5, 5, true);
-        graph.edge(2, 3, 2, true);
+        graph.edge(2, 5).setDistance(5).set(speedEnc, 60, 60);
+        graph.edge(2, 3).setDistance(2).set(speedEnc, 60, 60);
 
-        graph.edge(3, 5, 2, true);
-        graph.edge(3, 7, 10, true);
+        graph.edge(3, 5).setDistance(2).set(speedEnc, 60, 60);
+        graph.edge(3, 7).setDistance(10).set(speedEnc, 60, 60);
 
-        graph.edge(4, 6, 4, true);
-        graph.edge(4, 5, 7, true);
+        graph.edge(4, 6).setDistance(4).set(speedEnc, 60, 60);
+        graph.edge(4, 5).setDistance(7).set(speedEnc, 60, 60);
 
-        graph.edge(5, 6, 2, true);
-        graph.edge(5, 7, 1, true);
+        graph.edge(5, 6).setDistance(2).set(speedEnc, 60, 60);
+        graph.edge(5, 7).setDistance(1).set(speedEnc, 60, 60);
 
-        EdgeIteratorState edge6_7 = graph.edge(6, 7, 5, true);
+        EdgeIteratorState edge6_7 = graph.edge(6, 7).setDistance(5).set(speedEnc, 60, 60);
 
         updateDistancesFor(graph, 0, 0.0010, 0.00001);
         updateDistancesFor(graph, 1, 0.0008, 0.0000);
@@ -313,13 +428,14 @@ public class RoutingAlgorithmTest {
         edge6_7.setDistance(5 * edge6_7.getDistance());
     }
 
-    @Test
-    public void testNoPathFound() {
-        GraphHopperStorage graph = createGHStorage();
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testNoPathFound(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
         graph.edge(100, 101);
-        assertFalse(calcPath(graph, 0, 1).isFound());
+        assertFalse(f.calcPath(graph, 0, 1).isFound());
 
-        graph = createGHStorage();
+        graph = f.createGHStorage();
         graph.edge(100, 101);
 
         // two disconnected areas
@@ -328,67 +444,70 @@ public class RoutingAlgorithmTest {
         // 7-5-6
         //  \|
         //   8
-        graph.edge(0, 1, 7, true);
-        graph.edge(5, 6, 2, true);
-        graph.edge(5, 7, 1, true);
-        graph.edge(5, 8, 1, true);
-        graph.edge(7, 8, 1, true);
-        assertFalse(calcPath(graph, 0, 5).isFound());
+        graph.edge(0, 1).setDistance(7).set(f.carSpeedEnc, 60, 60);
+        graph.edge(5, 6).setDistance(2).set(f.carSpeedEnc, 60, 60);
+        graph.edge(5, 7).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(5, 8).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(7, 8).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        assertFalse(f.calcPath(graph, 0, 5).isFound());
 
         // disconnected as directed graph
         // 2-0->1
-        graph = createGHStorage();
-        graph.edge(0, 1, 1, false);
-        graph.edge(0, 2, 1, true);
-        assertFalse(calcPath(graph, 1, 2).isFound());
-        assertTrue(calcPath(graph, 2, 1).isFound());
+        graph = f.createGHStorage();
+        graph.edge(0, 1).setDistance(1).set(f.carSpeedEnc, 60, 0);
+        graph.edge(0, 2).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        f.resetCH();
+        assertFalse(f.calcPath(graph, 1, 2).isFound());
+        assertTrue(f.calcPath(graph, 2, 1).isFound());
     }
 
-    @Test
-    public void testWikipediaShortestPath() {
-        GraphHopperStorage ghStorage = createWikipediaTestGraph();
-        Path p = calcPath(ghStorage, 0, 4);
-        assertEquals(p.toString(), nodes(0, 2, 5, 4), p.calcNodes());
-        assertEquals(p.toString(), 20, p.getDistance(), 1e-4);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testWikipediaShortestPath(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initWikipediaTestGraph(graph, f.carSpeedEnc);
+        Path p = f.calcPath(graph, 0, 4);
+        assertEquals(nodes(0, 2, 5, 4), p.calcNodes(), p.toString());
+        assertEquals(20, p.getDistance(), 1e-4, p.toString());
     }
 
-    @Test
-    public void testCalcIf1EdgeAway() {
-        GraphHopperStorage graph = createGHStorage();
-        initTestStorage(graph);
-        Path p = calcPath(graph, 1, 2);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testCalcIf1EdgeAway(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initTestStorage(graph, f.carSpeedEnc);
+        Path p = f.calcPath(graph, 1, 2);
         assertEquals(nodes(1, 2), p.calcNodes());
-        assertEquals(p.toString(), 35.1, p.getDistance(), .1);
+        assertEquals(35.1, p.getDistance(), .1, p.toString());
     }
 
     // see wikipedia-graph.svg !
-    private GraphHopperStorage createWikipediaTestGraph() {
-        GraphHopperStorage graph = createGHStorage();
-        graph.edge(0, 1, 7, true);
-        graph.edge(0, 2, 9, true);
-        graph.edge(0, 5, 14, true);
-        graph.edge(1, 2, 10, true);
-        graph.edge(1, 3, 15, true);
-        graph.edge(2, 5, 2, true);
-        graph.edge(2, 3, 11, true);
-        graph.edge(3, 4, 6, true);
-        graph.edge(4, 5, 9, true);
-        return graph;
+    private void initWikipediaTestGraph(Graph graph, DecimalEncodedValue speedEnc) {
+        graph.edge(0, 1).setDistance(7).set(speedEnc, 60, 60);
+        graph.edge(0, 2).setDistance(9).set(speedEnc, 60, 60);
+        graph.edge(0, 5).setDistance(14).set(speedEnc, 60, 60);
+        graph.edge(1, 2).setDistance(10).set(speedEnc, 60, 60);
+        graph.edge(1, 3).setDistance(15).set(speedEnc, 60, 60);
+        graph.edge(2, 5).setDistance(2).set(speedEnc, 60, 60);
+        graph.edge(2, 3).setDistance(11).set(speedEnc, 60, 60);
+        graph.edge(3, 4).setDistance(6).set(speedEnc, 60, 60);
+        graph.edge(4, 5).setDistance(9).set(speedEnc, 60, 60);
     }
 
-    @Test
-    public void testBidirectional() {
-        GraphHopperStorage graph = createGHStorage();
-        initBiGraph(graph);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testBidirectional(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initBiGraph(graph, f.carSpeedEnc);
 
-        Path p = calcPath(graph, 0, 4);
-        assertEquals(p.toString(), nodes(0, 7, 6, 8, 3, 4), p.calcNodes());
-        assertEquals(p.toString(), 335.8, p.getDistance(), .1);
+        Path p = f.calcPath(graph, 0, 4);
+        assertEquals(nodes(0, 7, 6, 8, 3, 4), p.calcNodes(), p.toString());
+        assertEquals(335.8, p.getDistance(), .1, p.toString());
 
-        p = calcPath(graph, 1, 2);
+        p = f.calcPath(graph, 1, 2);
         // the other way around is even larger as 0-1 is already 11008.452
-        assertEquals(p.toString(), nodes(1, 2), p.calcNodes());
-        assertEquals(p.toString(), 10007.7, p.getDistance(), .1);
+        assertEquals(nodes(1, 2), p.calcNodes(), p.toString());
+        assertEquals(10007.7, p.getDistance(), .1, p.toString());
     }
 
     // 0-1-2-3-4
@@ -396,18 +515,18 @@ public class RoutingAlgorithmTest {
     // |    8  |
     // \   /   |
     //  7-6----5
-    public static void initBiGraph(Graph graph) {
+    public static void initBiGraph(Graph graph, DecimalEncodedValue speedEnc) {
         // distance will be overwritten in second step as we need to calculate it from lat,lon
-        graph.edge(0, 1, 1, true);
-        graph.edge(1, 2, 1, true);
-        graph.edge(2, 3, 1, true);
-        graph.edge(3, 4, 1, true);
-        graph.edge(4, 5, 1, true);
-        graph.edge(5, 6, 1, true);
-        graph.edge(6, 7, 1, true);
-        graph.edge(7, 0, 1, true);
-        graph.edge(3, 8, 1, true);
-        graph.edge(8, 6, 1, true);
+        graph.edge(0, 1).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(1, 2).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(2, 3).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(3, 4).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(4, 5).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(5, 6).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(6, 7).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(7, 0).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(3, 8).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(8, 6).setDistance(1).set(speedEnc, 60, 60);
 
         // we need lat,lon for edge precise queries because the distances of snapped point
         // to adjacent nodes is calculated from lat,lon of the necessary points
@@ -424,79 +543,83 @@ public class RoutingAlgorithmTest {
         updateDistancesFor(graph, 5, 0, 0.004);
     }
 
-    @Test
-    public void testCreateAlgoTwice() {
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testCreateAlgoTwice(Fixture f) {
         // 0-1-2-3-4
         // |     / |
         // |    8  |
         // \   /   /
         //  7-6-5-/
-        GraphHopperStorage graph = createGHStorage();
-        graph.edge(0, 1, 1, true);
-        graph.edge(1, 2, 1, true);
-        graph.edge(2, 3, 1, true);
-        graph.edge(3, 4, 1, true);
-        graph.edge(4, 5, 1, true);
-        graph.edge(5, 6, 1, true);
-        graph.edge(6, 7, 1, true);
-        graph.edge(7, 0, 1, true);
-        graph.edge(3, 8, 1, true);
-        graph.edge(8, 6, 1, true);
+        BaseGraph graph = f.createGHStorage();
+        graph.edge(0, 1).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(1, 2).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(2, 3).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(3, 4).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(4, 5).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(5, 6).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(6, 7).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(7, 0).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(3, 8).setDistance(1).set(f.carSpeedEnc, 60, 60);
+        graph.edge(8, 6).setDistance(1).set(f.carSpeedEnc, 60, 60);
 
         // run the same query twice, this can be interesting because in the second call algorithms that pre-process
         // the graph might depend on the state of the graph after the first call 
-        Path p1 = calcPath(graph, 0, 4);
-        Path p2 = calcPath(graph, 0, 4);
+        Path p1 = f.calcPath(graph, 0, 4);
+        Path p2 = f.calcPath(graph, 0, 4);
 
         assertEquals(p1.calcNodes(), p2.calcNodes());
     }
 
-    @Test
-    public void testMaxVisitedNodes() {
-        GraphHopperStorage graph = createGHStorage();
-        initBiGraph(graph);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testMaxVisitedNodes(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initBiGraph(graph, f.carSpeedEnc);
 
-        Path p = calcPath(graph, 0, 4);
+        Path p = f.calcPath(graph, 0, 4);
         assertTrue(p.isFound());
         int maxVisitedNodes = 3;
-        p = calcPath(graph, defaultWeighting, maxVisitedNodes, 0, 4);
+        p = f.calcPath(graph, f.defaultWeighting, maxVisitedNodes, 0, 4);
         assertFalse(p.isFound());
     }
 
-    @Test
-    public void testBidirectional2() {
-        GraphHopperStorage graph = createGHStorage();
-        initBidirGraphManualDistances(graph);
-        Path p = calcPath(graph, 0, 4);
-        assertEquals(p.toString(), 40, p.getDistance(), 1e-4);
-        assertEquals(p.toString(), 5, p.calcNodes().size());
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testBidirectional2(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initBidirGraphManualDistances(graph, f.carSpeedEnc);
+        Path p = f.calcPath(graph, 0, 4);
+        assertEquals(40, p.getDistance(), 1e-4, p.toString());
+        assertEquals(5, p.calcNodes().size(), p.toString());
         assertEquals(nodes(0, 7, 6, 5, 4), p.calcNodes());
     }
 
-    private void initBidirGraphManualDistances(GraphHopperStorage graph) {
+    private void initBidirGraphManualDistances(BaseGraph graph, DecimalEncodedValue speedEnc) {
         // 0-1-2-3-4
         // |     / |
         // |    8  |
         // \   /   /
         //  7-6-5-/
-        graph.edge(0, 1, 100, true);
-        graph.edge(1, 2, 1, true);
-        graph.edge(2, 3, 1, true);
-        graph.edge(3, 4, 1, true);
-        graph.edge(4, 5, 20, true);
-        graph.edge(5, 6, 10, true);
-        graph.edge(6, 7, 5, true);
-        graph.edge(7, 0, 5, true);
-        graph.edge(3, 8, 20, true);
-        graph.edge(8, 6, 20, true);
+        graph.edge(0, 1).setDistance(100).set(speedEnc, 60, 60);
+        graph.edge(1, 2).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(2, 3).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(3, 4).setDistance(1).set(speedEnc, 60, 60);
+        graph.edge(4, 5).setDistance(20).set(speedEnc, 60, 60);
+        graph.edge(5, 6).setDistance(10).set(speedEnc, 60, 60);
+        graph.edge(6, 7).setDistance(5).set(speedEnc, 60, 60);
+        graph.edge(7, 0).setDistance(5).set(speedEnc, 60, 60);
+        graph.edge(3, 8).setDistance(20).set(speedEnc, 60, 60);
+        graph.edge(8, 6).setDistance(20).set(speedEnc, 60, 60);
     }
 
-    @Test
-    public void testRekeyBugOfIntBinHeap() {
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testRekeyBugOfIntBinHeap(Fixture f) {
         // using Dijkstra + IntBinHeap then rekey loops endlessly
-        GraphHopperStorage matrixGraph = createGHStorage();
-        initMatrixALikeGraph(matrixGraph);
-        Path p = calcPath(matrixGraph, 36, 91);
+        BaseGraph matrixGraph = f.createGHStorage();
+        initMatrixALikeGraph(matrixGraph, f.carSpeedEnc);
+        Path p = f.calcPath(matrixGraph, 36, 91);
         assertEquals(12, p.calcNodes().size());
 
         IntIndexedContainer nodes = p.calcNodes();
@@ -506,11 +629,11 @@ public class RoutingAlgorithmTest {
         }
         assertEquals(66f, p.getDistance(), 1e-3);
 
-        testBug1(matrixGraph);
-        testCorrectWeight(matrixGraph);
+        testBug1(f, matrixGraph);
+        testCorrectWeight(f, matrixGraph);
     }
 
-    private static void initMatrixALikeGraph(GraphHopperStorage tmpGraph) {
+    private static void initMatrixALikeGraph(BaseGraph tmpGraph, DecimalEncodedValue speedEnc) {
         int WIDTH = 10;
         int HEIGHT = 15;
         int[][] matrix = new int[WIDTH][HEIGHT];
@@ -531,8 +654,7 @@ public class RoutingAlgorithmTest {
                     float dist = 5 + Math.abs(rand.nextInt(5));
                     if (print)
                         System.out.print(" " + (int) dist + "\t           ");
-
-                    tmpGraph.edge(matrix[w][h], matrix[w][h - 1], dist, true);
+                    tmpGraph.edge(matrix[w][h], matrix[w][h - 1]).setDistance(dist).set(speedEnc, 60, 60);
                 }
             }
             if (print) {
@@ -550,7 +672,7 @@ public class RoutingAlgorithmTest {
                     float dist = 5 + Math.abs(rand.nextInt(5));
                     if (print)
                         System.out.print("-- " + (int) dist + "\t-- ");
-                    tmpGraph.edge(matrix[w][h], matrix[w - 1][h], dist, true);
+                    tmpGraph.edge(matrix[w][h], matrix[w - 1][h]).setDistance(dist).set(speedEnc, 60, 60);
                 }
                 if (print)
                     System.out.print("(" + matrix[w][h] + ")\t");
@@ -560,56 +682,59 @@ public class RoutingAlgorithmTest {
         }
     }
 
-    private void testBug1(GraphHopperStorage g) {
-        Path p = calcPath(g, 34, 36);
+    private void testBug1(Fixture f, BaseGraph g) {
+        Path p = f.calcPath(g, 34, 36);
         assertEquals(nodes(34, 35, 36), p.calcNodes());
         assertEquals(3, p.calcNodes().size());
         assertEquals(17, p.getDistance(), 1e-5);
     }
 
-    private void testCorrectWeight(GraphHopperStorage g) {
-        Path p = calcPath(g, 45, 72);
+    private void testCorrectWeight(Fixture f, BaseGraph g) {
+        Path p = f.calcPath(g, 45, 72);
         assertEquals(nodes(45, 44, 54, 64, 74, 73, 72), p.calcNodes());
         assertEquals(38f, p.getDistance(), 1e-3);
     }
 
-    @Test
-    public void testCannotCalculateSP() {
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testCannotCalculateSP(Fixture f) {
         // 0->1->2
-        GraphHopperStorage graph = createGHStorage();
-        graph.edge(0, 1, 1, false);
-        graph.edge(1, 2, 1, false);
-        Path p = calcPath(graph, 0, 2);
-        assertEquals(p.toString(), 3, p.calcNodes().size());
+        BaseGraph graph = f.createGHStorage();
+        graph.edge(0, 1).setDistance(1).set(f.carSpeedEnc, 60, 0);
+        graph.edge(1, 2).setDistance(1).set(f.carSpeedEnc, 60, 0);
+        Path p = f.calcPath(graph, 0, 2);
+        assertEquals(3, p.calcNodes().size(), p.toString());
     }
 
-    @Test
-    public void testDirectedGraphBug1() {
-        GraphHopperStorage graph = createGHStorage();
-        graph.edge(0, 1, 3, false);
-        graph.edge(1, 2, 2.99, false);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testDirectedGraphBug1(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        graph.edge(0, 1).setDistance(3).set(f.carSpeedEnc, 60, 0);
+        graph.edge(1, 2).setDistance(2.99).set(f.carSpeedEnc, 60, 0);
 
-        graph.edge(0, 3, 2, false);
-        graph.edge(3, 4, 3, false);
-        graph.edge(4, 2, 1, false);
+        graph.edge(0, 3).setDistance(2).set(f.carSpeedEnc, 60, 0);
+        graph.edge(3, 4).setDistance(3).set(f.carSpeedEnc, 60, 0);
+        graph.edge(4, 2).setDistance(1).set(f.carSpeedEnc, 60, 0);
 
-        Path p = calcPath(graph, 0, 2);
-        assertEquals(p.toString(), nodes(0, 1, 2), p.calcNodes());
-        assertEquals(p.toString(), 5.99, p.getDistance(), 1e-4);
+        Path p = f.calcPath(graph, 0, 2);
+        assertEquals(nodes(0, 1, 2), p.calcNodes(), p.toString());
+        assertEquals(5.99, p.getDistance(), 1e-4, p.toString());
     }
 
-    @Test
-    public void testDirectedGraphBug2() {
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testDirectedGraphBug2(Fixture f) {
         // 0->1->2
         //    | /
         //    3<
-        GraphHopperStorage graph = createGHStorage();
-        graph.edge(0, 1, 1, false);
-        graph.edge(1, 2, 1, false);
-        graph.edge(2, 3, 1, false);
-        graph.edge(3, 1, 4, true);
+        BaseGraph graph = f.createGHStorage();
+        graph.edge(0, 1).setDistance(1).set(f.carSpeedEnc, 60, 0);
+        graph.edge(1, 2).setDistance(1).set(f.carSpeedEnc, 60, 0);
+        graph.edge(2, 3).setDistance(1).set(f.carSpeedEnc, 60, 0);
+        graph.edge(3, 1).setDistance(4).set(f.carSpeedEnc, 60, 60);
 
-        Path p = calcPath(graph, 0, 3);
+        Path p = f.calcPath(graph, 0, 3);
         assertEquals(nodes(0, 1, 2, 3), p.calcNodes());
     }
 
@@ -617,20 +742,26 @@ public class RoutingAlgorithmTest {
     // |   |  _/\
     // |  /  /  |
     // d-2--3-e-4
-    @Test
-    public void testWithCoordinates() {
-        Weighting weighting = new ShortestWeighting(carEncoder);
-        GraphHopperStorage graph = createGHStorage(false, weighting);
-        graph.edge(0, 1, 2, true).setWayGeometry(Helper.createPointList(1.5, 1));
-        graph.edge(2, 3, 2, true).setWayGeometry(Helper.createPointList(0, 1.5));
-        graph.edge(3, 4, 2, true).setWayGeometry(Helper.createPointList(0, 2));
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testWithCoordinates(Fixture f) {
+        Weighting weighting = new SpeedWeighting(f.carSpeedEnc);
+        BaseGraph graph = f.createGHStorage(false);
+        graph.edge(0, 1).setDistance(2).set(f.carSpeedEnc, 60, 60).
+                setWayGeometry(Helper.createPointList(1.5, 1));
+        graph.edge(2, 3).setDistance(2).set(f.carSpeedEnc, 60, 60).
+                setWayGeometry(Helper.createPointList(0, 1.5));
+        graph.edge(3, 4).setDistance(2).set(f.carSpeedEnc, 60, 60).
+                setWayGeometry(Helper.createPointList(0, 2));
 
         // duplicate but the second edge is longer
-        graph.edge(0, 2, 1.2, true);
-        graph.edge(0, 2, 1.5, true).setWayGeometry(Helper.createPointList(0.5, 0));
+        graph.edge(0, 2).setDistance(1.2).set(f.carSpeedEnc, 60, 60);
+        graph.edge(0, 2).setDistance(1.5).set(f.carSpeedEnc, 60, 60).
+                setWayGeometry(Helper.createPointList(0.5, 0));
 
-        graph.edge(1, 3, 1.3, true).setWayGeometry(Helper.createPointList(0.5, 1.5));
-        graph.edge(1, 4, 1, true);
+        graph.edge(1, 3).setDistance(1.3).set(f.carSpeedEnc, 60, 60).
+                setWayGeometry(Helper.createPointList(0.5, 1.5));
+        graph.edge(1, 4).setDistance(1).set(f.carSpeedEnc, 60, 60);
 
         updateDistancesFor(graph, 0, 1, 0.6);
         updateDistancesFor(graph, 1, 1, 1.5);
@@ -638,79 +769,84 @@ public class RoutingAlgorithmTest {
         updateDistancesFor(graph, 3, 0, 1);
         updateDistancesFor(graph, 4, 0, 2);
 
-        Path p = calcPath(graph, weighting, 4, 0);
+        Path p = f.calcPath(graph, weighting, 4, 0);
         assertEquals(nodes(4, 1, 0), p.calcNodes());
         assertEquals(Helper.createPointList(0, 2, 1, 1.5, 1.5, 1, 1, 0.6), p.calcPoints());
-        assertEquals(274128, p.calcPoints().calcDistance(new DistanceCalcEarth()), 1);
+        assertEquals(274128, new DistanceCalcEarth().calcDistance(p.calcPoints()), 1);
 
-        p = calcPath(graph, weighting, 2, 1);
+        p = f.calcPath(graph, weighting, 2, 1);
         assertEquals(nodes(2, 0, 1), p.calcNodes());
         assertEquals(Helper.createPointList(0, 0, 1, 0.6, 1.5, 1, 1, 1.5), p.calcPoints());
-        assertEquals(279482, p.calcPoints().calcDistance(new DistanceCalcEarth()), 1);
+        assertEquals(279482, new DistanceCalcEarth().calcDistance(p.calcPoints()), 1);
     }
 
-    @Test
-    public void testCalcIfEmptyWay() {
-        GraphHopperStorage graph = createGHStorage();
-        initTestStorage(graph);
-        Path p = calcPath(graph, 0, 0);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testCalcIfEmptyWay(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initTestStorage(graph, f.carSpeedEnc);
+        Path p = f.calcPath(graph, 0, 0);
         assertPathFromEqualsTo(p, 0);
     }
 
-    @Test
-    public void testViaEdges_FromEqualsTo() {
-        GraphHopperStorage ghStorage = createGHStorage();
-        initTestStorage(ghStorage);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testViaEdges_FromEqualsTo(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initTestStorage(graph, f.carSpeedEnc);
         // identical tower nodes
-        Path p = calcPath(ghStorage, new GHPoint(0.001, 0.000), new GHPoint(0.001, 0.000));
+        Path p = f.calcPath(graph, new GHPoint(0.001, 0.000), new GHPoint(0.001, 0.000));
         assertPathFromEqualsTo(p, 0);
 
         // identical query points on edge
-        p = calcPath(ghStorage, defaultWeighting, 0, 1, 0, 1);
+        p = f.calcPath(graph, f.defaultWeighting, 0, 1, 0, 1);
         assertPathFromEqualsTo(p, 8);
 
         // very close
-        p = calcPath(ghStorage, new GHPoint(0.00092, 0), new GHPoint(0.00091, 0));
+        p = f.calcPath(graph, new GHPoint(0.00092, 0), new GHPoint(0.00091, 0));
         assertEquals(nodes(8, 9), p.calcNodes());
-        assertEquals(p.toString(), 1.11, p.getDistance(), .1);
+        assertEquals(1.11, p.getDistance(), .1, p.toString());
     }
 
-    @Test
-    public void testViaEdges_BiGraph() {
-        GraphHopperStorage graph = createGHStorage();
-        initBiGraph(graph);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testViaEdges_BiGraph(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initBiGraph(graph, f.carSpeedEnc);
 
         // 0-7 to 4-3
-        Path p = calcPath(graph, new GHPoint(0.0009, 0), new GHPoint(0.001, 0.001105));
-        assertEquals(p.toString(), nodes(10, 7, 6, 8, 3, 9), p.calcNodes());
-        assertEquals(p.toString(), 324.11, p.getDistance(), 0.01);
+        Path p = f.calcPath(graph, new GHPoint(0.0009, 0), new GHPoint(0.001, 0.001105));
+        assertEquals(nodes(10, 7, 6, 8, 3, 9), p.calcNodes(), p.toString());
+        assertEquals(324.12, p.getDistance(), 0.01, p.toString());
 
         // 0-1 to 2-3
-        p = calcPath(graph, new GHPoint(0.001, 0.0001), new GHPoint(0.010, 0.0011));
-        assertEquals(p.toString(), nodes(0, 7, 6, 8, 3, 9), p.calcNodes());
-        assertEquals(p.toString(), 1335.35, p.getDistance(), 0.01);
+        p = f.calcPath(graph, new GHPoint(0.001, 0.0001), new GHPoint(0.010, 0.0011));
+        assertEquals(nodes(0, 7, 6, 8, 3, 9), p.calcNodes(), p.toString());
+        assertEquals(1335.38, p.getDistance(), 0.01, p.toString());
     }
 
-    @Test
-    public void testViaEdges_WithCoordinates() {
-        GraphHopperStorage ghStorage = createGHStorage();
-        initTestStorage(ghStorage);
-        Path p = calcPath(ghStorage, defaultWeighting, 0, 1, 2, 3);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testViaEdges_WithCoordinates(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
+        initTestStorage(graph, f.carSpeedEnc);
+        Path p = f.calcPath(graph, f.defaultWeighting, 0, 1, 2, 3);
         assertEquals(nodes(8, 1, 2, 9), p.calcNodes());
-        assertEquals(p.toString(), 56.7, p.getDistance(), .1);
+        assertEquals(56.7, p.getDistance(), .1, p.toString());
     }
 
-    @Test
-    public void testViaEdges_SpecialCases() {
-        GraphHopperStorage graph = createGHStorage();
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testViaEdges_SpecialCases(Fixture f) {
+        BaseGraph graph = f.createGHStorage();
         // 0->1\
         // |    2
         // 4<-3/
-        graph.edge(0, 1, 7, false);
-        graph.edge(1, 2, 7, true);
-        graph.edge(2, 3, 7, true);
-        graph.edge(3, 4, 7, false);
-        graph.edge(4, 0, 7, true);
+        graph.edge(0, 1).setDistance(7).set(f.carSpeedEnc, 60, 0);
+        graph.edge(1, 2).setDistance(7).set(f.carSpeedEnc, 60, 60);
+        graph.edge(2, 3).setDistance(7).set(f.carSpeedEnc, 60, 60);
+        graph.edge(3, 4).setDistance(7).set(f.carSpeedEnc, 60, 0);
+        graph.edge(4, 0).setDistance(7).set(f.carSpeedEnc, 60, 60);
 
         updateDistancesFor(graph, 4, 0, 0);
         updateDistancesFor(graph, 0, 0.00010, 0);
@@ -719,101 +855,55 @@ public class RoutingAlgorithmTest {
         updateDistancesFor(graph, 3, 0, 0.0001);
 
         // 0-1 to 3-4
-        Path p = calcPath(graph, new GHPoint(0.00010, 0.00001), new GHPoint(0, 0.00009));
+        Path p = f.calcPath(graph, new GHPoint(0.00010, 0.00001), new GHPoint(0, 0.00009));
         assertEquals(nodes(5, 1, 2, 3, 6), p.calcNodes());
-        assertEquals(p.toString(), 26.81, p.getDistance(), .1);
+        assertEquals(26.81, p.getDistance(), .1, p.toString());
 
         // overlapping edges: 2-3 and 3-2
-        p = calcPath(graph, new GHPoint(0.000049, 0.00014), new GHPoint(0.00001, 0.0001));
+        p = f.calcPath(graph, new GHPoint(0.000049, 0.00014), new GHPoint(0.00001, 0.0001));
         assertEquals(nodes(5, 6), p.calcNodes());
-        assertEquals(p.toString(), 6.2, p.getDistance(), .1);
+        assertEquals(6.2, p.getDistance(), .1, p.toString());
 
         // 'from' and 'to' edge share one node '2': 1-2 to 3-2
-        p = calcPath(graph, new GHPoint(0.00009, 0.00011), new GHPoint(0.00001, 0.00011));
-        assertEquals(p.toString(), nodes(6, 2, 5), p.calcNodes());
-        assertEquals(p.toString(), 12.57, p.getDistance(), .1);
+        p = f.calcPath(graph, new GHPoint(0.00009, 0.00011), new GHPoint(0.00001, 0.00011));
+        assertEquals(nodes(6, 2, 5), p.calcNodes(), p.toString());
+        assertEquals(12.57, p.getDistance(), .1, p.toString());
     }
 
-    @Test
-    public void testQueryGraphAndFastest() {
-        Weighting weighting = new FastestWeighting(carEncoder);
-        GraphHopperStorage graph = createGHStorage(false, weighting);
-        initDirectedAndDiffSpeed(graph, carEncoder);
-        Path p = calcPath(graph, weighting, new GHPoint(0.002, 0.0005), new GHPoint(0.0017, 0.0031));
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testQueryGraphAndFastest(Fixture f) {
+        Weighting weighting = new SpeedWeighting(f.carSpeedEnc);
+        BaseGraph graph = f.createGHStorage(false);
+        initDirectedAndDiffSpeed(graph, f.carSpeedEnc);
+        Path p = f.calcPath(graph, weighting, new GHPoint(0.002, 0.0005), new GHPoint(0.0017, 0.0031));
         assertEquals(nodes(8, 1, 5, 3, 9), p.calcNodes());
         assertEquals(602.98, p.getDistance(), 1e-1);
     }
 
-    /**
-     * Creates query result on edge (node1-node2) very close to node1.
-     */
-    private QueryResult createQRBetweenNodes(Graph graph, int node1, int node2) {
-        EdgeIteratorState edge = GHUtility.getEdge(graph, node1, node2);
-        if (edge == null)
-            throw new IllegalStateException("edge not found? " + node1 + "-" + node2);
-
-        NodeAccess na = graph.getNodeAccess();
-        double lat = na.getLatitude(edge.getBaseNode());
-        double lon = na.getLongitude(edge.getBaseNode());
-        double latAdj = na.getLatitude(edge.getAdjNode());
-        double lonAdj = na.getLongitude(edge.getAdjNode());
-        // calculate query point near the base node but not directly on it!
-        QueryResult res = new QueryResult(lat + (latAdj - lat) * .1, lon + (lonAdj - lon) * .1);
-        res.setClosestNode(edge.getBaseNode());
-        res.setClosestEdge(edge);
-        res.setWayIndex(0);
-        res.setSnappedPosition(QueryResult.Position.EDGE);
-        res.calcSnappedPoint(DIST_EARTH);
-        return res;
-    }
-
-    @Test
-    public void testTwoWeightsPerEdge() {
-        FastestWeighting fastestWeighting = new FastestWeighting(bike2Encoder);
-        GraphHopperStorage graph = createGHStorage(true, fastestWeighting);
-        initEleGraph(graph);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testTwoWeightsPerEdge(Fixture f) {
+        Weighting weighting = new SpeedWeighting(f.bike2SpeedEnc);
+        BaseGraph graph = f.createGHStorage(true);
+        initEleGraph(graph, 18, f.bike2SpeedEnc);
         // force the other path
-        GHUtility.setProperties(GHUtility.getEdge(graph, 0, 3), bike2Encoder, 10, false, true);
+        GHUtility.getEdge(graph, 0, 3).set(f.bike2SpeedEnc, 0, 10);
 
         // for two weights per edge it happened that Path (and also the Weighting) read the wrong side
         // of the speed and read 0 => infinity weight => overflow of millis => negative millis!
-        Path p = calcPath(graph, fastestWeighting, 0, 10);
-        assertEquals(85124371, p.getTime());
+        Path p = f.calcPath(graph, weighting, 0, 10);
+        assertEquals(23645657, p.getTime());
         assertEquals(425622, p.getDistance(), 1);
-        assertEquals(85124.4, p.getWeight(), 1);
+        assertEquals(23646, p.getWeight(), 1);
     }
 
-    @Test
-    public void test0SpeedButUnblocked_Issue242() {
-        GraphHopperStorage graph = createGHStorage();
-        EdgeIteratorState edge01 = graph.edge(0, 1).setDistance(10);
-        EdgeIteratorState edge12 = graph.edge(1, 2).setDistance(10);
-        BooleanEncodedValue carAccessEnc = carEncoder.getAccessEnc();
-        DecimalEncodedValue carAvSpeedEnc = carEncoder.getAverageSpeedEnc();
-        edge01.set(carAvSpeedEnc, 0.0).set(carAccessEnc, true).setReverse(carAccessEnc, true);
-        edge01.setFlags(edge01.getFlags());
-
-        edge12.set(carAvSpeedEnc, 0.0).set(carAccessEnc, true).setReverse(carAccessEnc, true);
-        edge12.setFlags(edge12.getFlags());
-
-        try {
-            calcPath(graph, 0, 2);
-            fail("there should have been an exception");
-        } catch (Exception ex) {
-            assertTrue(ex.getMessage(), ex.getMessage().startsWith("Speed cannot be 0"));
-        }
-    }
-
-    @Test
-    public void testTwoWeightsPerEdge2() {
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testTwoWeightsPerEdge2(Fixture f) {
         // other direction should be different!
         Weighting fakeWeighting = new Weighting() {
-            private final Weighting tmpW = new FastestWeighting(carEncoder);
-
-            @Override
-            public FlagEncoder getFlagEncoder() {
-                return carEncoder;
-            }
+            private final Weighting tmpW = new SpeedWeighting(f.carSpeedEnc);
 
             @Override
             public double getMinWeight(double distance) {
@@ -821,7 +911,9 @@ public class RoutingAlgorithmTest {
             }
 
             @Override
-            public final double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse) {
+            public double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse) {
+                if (Double.isInfinite(tmpW.calcEdgeWeight(edgeState, reverse)))
+                    return Double.POSITIVE_INFINITY;
                 int adj = edgeState.getAdjNode();
                 int base = edgeState.getBaseNode();
                 if (reverse) {
@@ -868,36 +960,33 @@ public class RoutingAlgorithmTest {
 
             @Override
             public String toString() {
-                return tmpW.getFlagEncoder().toString() + "_" + getName();
+                return getName();
             }
         };
 
-        GraphHopperStorage graph = createGHStorage(true, defaultWeighting);
-        initEleGraph(graph);
-        Path p = calcPath(graph, 0, 10);
-        // GHUtility.printEdgeInfo(graph, carEncoder);
+        BaseGraph graph = f.createGHStorage(true);
+        initEleGraph(graph, 60, f.carSpeedEnc);
+        Path p = f.calcPath(graph, 0, 10);
         assertEquals(nodes(0, 4, 6, 10), p.calcNodes());
 
-        graph = createGHStorage(true, fakeWeighting);
-        initEleGraph(graph);
-        p = calcPath(graph, fakeWeighting, 3, 0, 10, 9);
+        graph = f.createGHStorage(true);
+        initEleGraph(graph, 60, f.carSpeedEnc);
+        p = f.calcPath(graph, fakeWeighting, 3, 0, 10, 9);
         assertEquals(nodes(12, 0, 1, 2, 11, 7, 10, 13), p.calcNodes());
-        assertEquals(37009621, p.getTime());
+        assertEquals(10280445, p.getTime());
         assertEquals(616827, p.getDistance(), 1);
         assertEquals(493462, p.getWeight(), 1);
     }
 
-    @Test
-    public void testRandomGraph() {
-        // todo: use speed both directions
-        DecimalEncodedValue speedEnc = carEncoder.getAverageSpeedEnc();
-        FastestWeighting fastestWeighting = new FastestWeighting(carEncoder);
-        GraphHopperStorage graph = createGHStorage(false, fastestWeighting);
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testRandomGraph(Fixture f) {
+        Weighting weighting = new SpeedWeighting(f.carSpeedEnc);
+        BaseGraph graph = f.createGHStorage(false);
         final long seed = System.nanoTime();
         LOGGER.info("testRandomGraph - using seed: " + seed);
         Random rnd = new Random(seed);
-        // we're not including loops otherwise duplicate nodes in path might fail the test
-        GHUtility.buildRandomGraph(graph, rnd, 10, 2.0, false, true, speedEnc, 0.7, 0.7, 0.7);
+        GHUtility.buildRandomGraph(graph, rnd, 10, 2.0, true, f.carSpeedEnc, null, 0.7, 0.7);
         final PathCalculator refCalculator = new DijkstraCalculator();
         int numRuns = 100;
         for (int i = 0; i < numRuns; i++) {
@@ -906,50 +995,43 @@ public class RoutingAlgorithmTest {
             double lonFrom = bounds.minLon + rnd.nextDouble() * (bounds.maxLon - bounds.minLon);
             double latTo = bounds.minLat + rnd.nextDouble() * (bounds.maxLat - bounds.minLat);
             double lonTo = bounds.minLon + rnd.nextDouble() * (bounds.maxLon - bounds.minLon);
-            compareWithRef(fastestWeighting, graph, refCalculator, new GHPoint(latFrom, lonFrom), new GHPoint(latTo, lonTo), seed);
+            f.compareWithRef(weighting, graph, refCalculator, new GHPoint(latFrom, lonFrom), new GHPoint(latTo, lonTo), seed);
         }
     }
 
-    private void compareWithRef(Weighting weighting, GraphHopperStorage graph, PathCalculator refCalculator, GHPoint from, GHPoint to, long seed) {
-        Path path = calcPath(graph, weighting, from, to);
-        Path refPath = refCalculator.calcPath(graph, weighting, traversalMode, defaultMaxVisitedNodes, from, to);
-        assertEquals("wrong weight, " + weighting + ", seed: " + seed, refPath.getWeight(), path.getWeight(), 1.e-1);
-        assertEquals("wrong nodes, " + weighting + ", seed: " + seed, refPath.calcNodes(), path.calcNodes());
-        assertEquals("wrong distance, " + weighting + ", seed: " + seed, refPath.getDistance(), path.getDistance(), 1.e-1);
-        assertEquals("wrong time, " + weighting + ", seed: " + seed, refPath.getTime(), path.getTime(), 100);
-    }
+    @ParameterizedTest
+    @ArgumentsSource(FixtureProvider.class)
+    public void testMultipleVehicles_issue548(Fixture f) {
+        Weighting footWeighting = new SpeedWeighting(f.footSpeedEnc);
+        Weighting carWeighting = new SpeedWeighting(f.carSpeedEnc);
 
-    @Test
-    public void testMultipleVehicles_issue548() {
-        FastestWeighting footWeighting = new FastestWeighting(footEncoder);
-        FastestWeighting carWeighting = new FastestWeighting(carEncoder);
-
-        GraphHopperStorage ghStorage = createGHStorage(false, footWeighting, carWeighting);
-        initFootVsCar(carEncoder, footEncoder, ghStorage);
+        BaseGraph graph = f.createGHStorage(false);
+        initFootVsCar(f.carSpeedEnc, f.footSpeedEnc, graph);
 
         // normal path would be 0-4-6-7 for car:
-        Path carPath1 = calcPath(ghStorage, carWeighting, 0, 7);
+        Path carPath1 = f.calcPath(graph, carWeighting, 0, 7);
         assertEquals(nodes(0, 4, 6, 7), carPath1.calcNodes());
-        assertEquals(carPath1.toString(), 15000, carPath1.getDistance(), 1e-6);
+        assertEquals(15000, carPath1.getDistance(), 1e-6, carPath1.toString());
         // ... and 0-4-5-7 for foot
-        Path footPath1 = calcPath(ghStorage, footWeighting, 0, 7);
+        Path footPath1 = f.calcPath(graph, footWeighting, 0, 7);
         assertEquals(nodes(0, 4, 5, 7), footPath1.calcNodes());
-        assertEquals(footPath1.toString(), 17000, footPath1.getDistance(), 1e-6);
+        assertEquals(17000, footPath1.getDistance(), 1e-6, footPath1.toString());
 
-        // ... but now we block 4-6 for car, note that we have to recreate the storage otherwise CH graphs won't be
-        // refreshed
-        ghStorage = createGHStorage(false, footWeighting, carWeighting);
-        initFootVsCar(carEncoder, footEncoder, ghStorage);
-        GHUtility.setProperties(GHUtility.getEdge(ghStorage, 4, 6), carEncoder, 20, false, false);
+        // ... but now we block 4-6 for car. note that we have to recreate the storage to create a new directory so
+        //     we can create new CHs :(
+        graph = f.createGHStorage(false);
+        initFootVsCar(f.carSpeedEnc, f.footSpeedEnc, graph);
+        GHUtility.getEdge(graph, 4, 6).set(f.carSpeedEnc, 0, 0);
+        f.resetCH();
 
         // ... car needs to take another way
-        Path carPath2 = calcPath(ghStorage, carWeighting, 0, 7);
+        Path carPath2 = f.calcPath(graph, carWeighting, 0, 7);
         assertEquals(nodes(0, 1, 5, 6, 7), carPath2.calcNodes());
-        assertEquals(carPath2.toString(), 26000, carPath2.getDistance(), 1e-6);
+        assertEquals(26000, carPath2.getDistance(), 1e-6, carPath2.toString());
         // ... for foot it stays the same
-        Path footPath2 = calcPath(ghStorage, footWeighting, 0, 7);
+        Path footPath2 = f.calcPath(graph, footWeighting, 0, 7);
         assertEquals(nodes(0, 4, 5, 7), footPath2.calcNodes());
-        assertEquals(footPath2.toString(), 17000, footPath2.getDistance(), 1e-6);
+        assertEquals(17000, footPath2.getDistance(), 1e-6, footPath2.toString());
     }
 
     // 0-1-2
@@ -959,102 +1041,52 @@ public class RoutingAlgorithmTest {
     // 5-6-7
     // | |\|
     // 8-9-10
-    private void initEleGraph(Graph g) {
-        g.edge(0, 1, 10, true);
-        g.edge(0, 4, 12, true);
-        g.edge(0, 3, 5, true);
-        g.edge(1, 2, 10, true);
-        g.edge(1, 4, 5, true);
-        g.edge(3, 5, 5, false);
-        g.edge(5, 6, 10, true);
-        g.edge(5, 8, 10, true);
-        g.edge(6, 4, 5, true);
-        g.edge(6, 7, 10, true);
-        g.edge(6, 10, 12, true);
-        g.edge(6, 9, 12, true);
-        g.edge(2, 11, 5, false);
-        g.edge(4, 11, 10, true);
-        g.edge(7, 11, 5, true);
-        g.edge(7, 10, 5, true);
-        g.edge(8, 9, 10, false);
-        g.edge(9, 8, 9, false);
-        g.edge(10, 9, 10, false);
-        updateDistancesFor(g, 0, 3, 0);
-        updateDistancesFor(g, 3, 2.5, 0);
-        updateDistancesFor(g, 5, 1, 0);
-        updateDistancesFor(g, 8, 0, 0);
-        updateDistancesFor(g, 1, 3, 1);
-        updateDistancesFor(g, 4, 2, 1);
-        updateDistancesFor(g, 6, 1, 1);
-        updateDistancesFor(g, 9, 0, 1);
-        updateDistancesFor(g, 2, 3, 2);
-        updateDistancesFor(g, 11, 2, 2);
-        updateDistancesFor(g, 7, 1, 2);
-        updateDistancesFor(g, 10, 0, 2);
-    }
-
-    /**
-     * Creates a GH storage supporting the default weighting for CH
-     */
-    private GraphHopperStorage createGHStorage() {
-        return createGHStorage(false, defaultWeighting);
-    }
-
-    /**
-     * Creates a GH storage supporting the given weightings for CH
-     */
-    private GraphHopperStorage createGHStorage(boolean is3D, Weighting... weightings) {
-        CHConfig[] chConfigs = new CHConfig[weightings.length];
-        for (int i = 0; i < weightings.length; i++) {
-            chConfigs[i] = new CHConfig(getCHGraphName(weightings[i]), weightings[i], traversalMode.isEdgeBased());
-        }
-        return new GraphBuilder(encodingManager).set3D(is3D)
-                .setCHConfigs(chConfigs)
-                // this test should never include turn costs, but we have to set it to true to be able to
-                // run edge-based algorithms
-                .withTurnCosts(traversalMode.isEdgeBased())
-                .create();
+    private void initEleGraph(Graph graph, double s, DecimalEncodedValue speedEnc) {
+        graph.edge(0, 1).setDistance(10).set(speedEnc, s, s);
+        graph.edge(0, 4).setDistance(12).set(speedEnc, s, s);
+        graph.edge(0, 3).setDistance(5).set(speedEnc, s, s);
+        graph.edge(1, 2).setDistance(10).set(speedEnc, s, s);
+        graph.edge(1, 4).setDistance(5).set(speedEnc, s, s);
+        graph.edge(3, 5).setDistance(5).set(speedEnc, s, 0);
+        graph.edge(5, 6).setDistance(10).set(speedEnc, s, s);
+        graph.edge(5, 8).setDistance(10).set(speedEnc, s, s);
+        graph.edge(6, 4).setDistance(5).set(speedEnc, s, s);
+        graph.edge(6, 7).setDistance(10).set(speedEnc, s, s);
+        graph.edge(6, 10).setDistance(12).set(speedEnc, s, s);
+        graph.edge(6, 9).setDistance(12).set(speedEnc, s, s);
+        graph.edge(2, 11).setDistance(5).set(speedEnc, s, 0);
+        graph.edge(4, 11).setDistance(10).set(speedEnc, s, s);
+        graph.edge(7, 11).setDistance(5).set(speedEnc, s, s);
+        graph.edge(7, 10).setDistance(5).set(speedEnc, s, s);
+        graph.edge(8, 9).setDistance(10).set(speedEnc, s, 0);
+        graph.edge(9, 8).setDistance(9).set(speedEnc, s, 0);
+        graph.edge(10, 9).setDistance(10).set(speedEnc, s, 0);
+        updateDistancesFor(graph, 0, 3, 0);
+        updateDistancesFor(graph, 3, 2.5, 0);
+        updateDistancesFor(graph, 5, 1, 0);
+        updateDistancesFor(graph, 8, 0, 0);
+        updateDistancesFor(graph, 1, 3, 1);
+        updateDistancesFor(graph, 4, 2, 1);
+        updateDistancesFor(graph, 6, 1, 1);
+        updateDistancesFor(graph, 9, 0, 1);
+        updateDistancesFor(graph, 2, 3, 2);
+        updateDistancesFor(graph, 11, 2, 2);
+        updateDistancesFor(graph, 7, 1, 2);
+        updateDistancesFor(graph, 10, 0, 2);
     }
 
     private static String getCHGraphName(Weighting weighting) {
-        return weighting.getName() + "_" + weighting.getFlagEncoder().toString();
+        return weighting.getName() + "_" + weighting.hashCode();
     }
 
-    private Path calcPath(GraphHopperStorage ghStorage, int from, int to) {
-        return calcPath(ghStorage, defaultWeighting, from, to);
-    }
-
-    private Path calcPath(GraphHopperStorage ghStorage, Weighting weighting, int from, int to) {
-        return calcPath(ghStorage, weighting, defaultMaxVisitedNodes, from, to);
-    }
-
-    private Path calcPath(GraphHopperStorage ghStorage, Weighting weighting, int maxVisitedNodes, int from, int to) {
-        return pathCalculator.calcPath(ghStorage, weighting, traversalMode, maxVisitedNodes, from, to);
-    }
-
-    private Path calcPath(GraphHopperStorage ghStorage, GHPoint from, GHPoint to) {
-        return calcPath(ghStorage, defaultWeighting, from, to);
-    }
-
-    private Path calcPath(GraphHopperStorage ghStorage, Weighting weighting, GHPoint from, GHPoint to) {
-        return pathCalculator.calcPath(ghStorage, weighting, traversalMode, defaultMaxVisitedNodes, from, to);
-    }
-
-    private Path calcPath(GraphHopperStorage ghStorage, Weighting weighting, int fromNode1, int fromNode2, int toNode1, int toNode2) {
-        // lookup two edges: fromNode1-fromNode2 and toNode1-toNode2
-        QueryResult from = createQRBetweenNodes(ghStorage, fromNode1, fromNode2);
-        QueryResult to = createQRBetweenNodes(ghStorage, toNode1, toNode2);
-        return pathCalculator.calcPath(ghStorage, weighting, traversalMode, defaultMaxVisitedNodes, from, to);
-    }
-
-    private void assertPathFromEqualsTo(Path p, int node) {
+    private static void assertPathFromEqualsTo(Path p, int node) {
         assertTrue(p.isFound());
-        assertEquals(p.toString(), nodes(node), p.calcNodes());
-        assertEquals(p.toString(), 1, p.calcPoints().size());
-        assertEquals(p.toString(), 0, p.calcEdges().size());
-        assertEquals(p.toString(), 0, p.getWeight(), 1e-4);
-        assertEquals(p.toString(), 0, p.getDistance(), 1e-4);
-        assertEquals(p.toString(), 0, p.getTime(), 1e-4);
+        assertEquals(nodes(node), p.calcNodes(), p.toString());
+        assertEquals(1, p.calcPoints().size(), p.toString());
+        assertEquals(0, p.calcEdges().size(), p.toString());
+        assertEquals(0, p.getWeight(), 1e-4, p.toString());
+        assertEquals(0, p.getDistance(), 1e-4, p.toString());
+        assertEquals(0, p.getTime(), 1e-4, p.toString());
     }
 
     private static IntArrayList nodes(int... nodes) {
@@ -1065,32 +1097,32 @@ public class RoutingAlgorithmTest {
      * Implement this interface to run the test cases with different routing algorithms
      */
     private interface PathCalculator {
-        Path calcPath(GraphHopperStorage graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, int from, int to);
+        Path calcPath(BaseGraph graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, int from, int to);
 
-        Path calcPath(GraphHopperStorage graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, GHPoint from, GHPoint to);
+        Path calcPath(BaseGraph graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, GHPoint from, GHPoint to);
 
-        Path calcPath(GraphHopperStorage graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, QueryResult from, QueryResult to);
+        Path calcPath(BaseGraph graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, Snap from, Snap to);
     }
 
     private static abstract class SimpleCalculator implements PathCalculator {
         @Override
-        public Path calcPath(GraphHopperStorage graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, int from, int to) {
+        public Path calcPath(BaseGraph graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, int from, int to) {
             RoutingAlgorithm algo = createAlgo(graph, weighting, traversalMode);
             algo.setMaxVisitedNodes(maxVisitedNodes);
             return algo.calcPath(from, to);
         }
 
         @Override
-        public Path calcPath(GraphHopperStorage graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, GHPoint from, GHPoint to) {
+        public Path calcPath(BaseGraph graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, GHPoint from, GHPoint to) {
             LocationIndexTree index = new LocationIndexTree(graph, new RAMDirectory());
             index.prepareIndex();
-            QueryResult fromQR = index.findClosest(from.getLat(), from.getLon(), EdgeFilter.ALL_EDGES);
-            QueryResult toQR = index.findClosest(to.getLat(), to.getLon(), EdgeFilter.ALL_EDGES);
-            return calcPath(graph, weighting, traversalMode, maxVisitedNodes, fromQR, toQR);
+            Snap fromSnap = index.findClosest(from.getLat(), from.getLon(), EdgeFilter.ALL_EDGES);
+            Snap toSnap = index.findClosest(to.getLat(), to.getLon(), EdgeFilter.ALL_EDGES);
+            return calcPath(graph, weighting, traversalMode, maxVisitedNodes, fromSnap, toSnap);
         }
 
         @Override
-        public Path calcPath(GraphHopperStorage graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, QueryResult from, QueryResult to) {
+        public Path calcPath(BaseGraph graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, Snap from, Snap to) {
             QueryGraph queryGraph = QueryGraph.create(graph, from, to);
             RoutingAlgorithm algo = createAlgo(queryGraph, weighting, traversalMode);
             algo.setMaxVisitedNodes(maxVisitedNodes);
@@ -1161,47 +1193,50 @@ public class RoutingAlgorithmTest {
     }
 
     private static abstract class CHCalculator implements PathCalculator {
+        private final Map<String, RoutingCHGraph> routingCHGraphs = new HashMap<>();
+
         @Override
-        public Path calcPath(GraphHopperStorage graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, int from, int to) {
-            CHConfig chConfig = new CHConfig(getCHGraphName(weighting), weighting, traversalMode.isEdgeBased());
-            PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraphHopperStorage(graph, chConfig);
-            CHGraph chGraph = graph.getCHGraph(chConfig);
-            if (chGraph.getEdges() == chGraph.getOriginalEdges()) {
-                graph.freeze();
-                pch.doWork();
-            }
-            RoutingAlgorithmFactory algoFactory = pch.getRoutingAlgorithmFactory();
-            AlgorithmOptions opts = AlgorithmOptions.start()
-                    .algorithm(getAlgorithm())
-                    .weighting(weighting).traversalMode(traversalMode).maxVisitedNodes(maxVisitedNodes).build();
-            RoutingAlgorithm algo = algoFactory.createAlgo(chGraph, opts);
+        public Path calcPath(BaseGraph graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, int from, int to) {
+            String chGraphName = getCHGraphName(weighting) + (traversalMode.isEdgeBased() ? "_edge" : "_node");
+            RoutingCHGraph routingCHGraph = routingCHGraphs.computeIfAbsent(chGraphName, name -> {
+                if (!graph.isFrozen())
+                    graph.freeze();
+                CHConfig chConfig = new CHConfig(name, weighting, traversalMode.isEdgeBased());
+                PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraph(graph, chConfig);
+                PrepareContractionHierarchies.Result res = pch.doWork();
+                return RoutingCHGraphImpl.fromGraph(graph, res.getCHStorage(), res.getCHConfig());
+            });
+            RoutingAlgorithm algo = new CHRoutingAlgorithmFactory(routingCHGraph).createAlgo(new PMap()
+                    .putObject(ALGORITHM, getAlgorithm())
+                    .putObject(MAX_VISITED_NODES, maxVisitedNodes)
+            );
             return algo.calcPath(from, to);
         }
 
         @Override
-        public Path calcPath(GraphHopperStorage graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, GHPoint from, GHPoint to) {
+        public Path calcPath(BaseGraph graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, GHPoint from, GHPoint to) {
             LocationIndexTree locationIndex = new LocationIndexTree(graph, new RAMDirectory());
             LocationIndex index = locationIndex.prepareIndex();
-            QueryResult fromQR = index.findClosest(from.getLat(), from.getLon(), EdgeFilter.ALL_EDGES);
-            QueryResult toQR = index.findClosest(to.getLat(), to.getLon(), EdgeFilter.ALL_EDGES);
-            return calcPath(graph, weighting, traversalMode, maxVisitedNodes, fromQR, toQR);
+            Snap fromSnap = index.findClosest(from.getLat(), from.getLon(), EdgeFilter.ALL_EDGES);
+            Snap toSnap = index.findClosest(to.getLat(), to.getLon(), EdgeFilter.ALL_EDGES);
+            return calcPath(graph, weighting, traversalMode, maxVisitedNodes, fromSnap, toSnap);
         }
 
         @Override
-        public Path calcPath(GraphHopperStorage graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, QueryResult from, QueryResult to) {
-            CHConfig chConfig = new CHConfig(getCHGraphName(weighting), weighting, traversalMode.isEdgeBased());
-            PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraphHopperStorage(graph, chConfig);
-            CHGraph chGraph = graph.getCHGraph(chConfig);
-            if (chGraph.getEdges() == chGraph.getOriginalEdges()) {
+        public Path calcPath(BaseGraph graph, Weighting weighting, TraversalMode traversalMode, int maxVisitedNodes, Snap from, Snap to) {
+            String chGraphName = getCHGraphName(weighting) + (traversalMode.isEdgeBased() ? "_edge" : "_node");
+            RoutingCHGraph routingCHGraph = routingCHGraphs.computeIfAbsent(chGraphName, name -> {
                 graph.freeze();
-                pch.doWork();
-            }
-            QueryGraph queryGraph = QueryGraph.create(chGraph, from, to);
-            RoutingAlgorithmFactory algoFactory = pch.getRoutingAlgorithmFactory();
-            AlgorithmOptions opts = AlgorithmOptions.start()
-                    .algorithm(getAlgorithm())
-                    .weighting(weighting).traversalMode(traversalMode).maxVisitedNodes(maxVisitedNodes).build();
-            RoutingAlgorithm algo = algoFactory.createAlgo(queryGraph, opts);
+                CHConfig chConfig = new CHConfig(name, weighting, traversalMode.isEdgeBased());
+                PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraph(graph, chConfig);
+                PrepareContractionHierarchies.Result res = pch.doWork();
+                return RoutingCHGraphImpl.fromGraph(graph, res.getCHStorage(), res.getCHConfig());
+            });
+            QueryGraph queryGraph = QueryGraph.create(graph, Arrays.asList(from, to));
+            QueryRoutingCHGraph queryRoutingCHGraph = new QueryRoutingCHGraph(routingCHGraph, queryGraph);
+            RoutingAlgorithm algo = new CHRoutingAlgorithmFactory(queryRoutingCHGraph).createAlgo(new PMap()
+                    .putObject(ALGORITHM, getAlgorithm())
+                    .putObject(MAX_VISITED_NODES, maxVisitedNodes));
             return algo.calcPath(from.getClosestNode(), to.getClosestNode());
 
         }

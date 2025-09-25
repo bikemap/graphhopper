@@ -19,38 +19,33 @@ package com.graphhopper.routing.ch;
 
 import com.graphhopper.GraphHopperConfig;
 import com.graphhopper.config.CHProfile;
-import com.graphhopper.routing.RoutingAlgorithmFactory;
-import com.graphhopper.storage.CHConfig;
-import com.graphhopper.storage.GraphHopperStorage;
-import com.graphhopper.storage.StorableProperties;
+import com.graphhopper.storage.*;
+import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.PMap;
 import com.graphhopper.util.Parameters.CH;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.ExecutorCompletionService;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.graphhopper.util.Helper.createFormatter;
 import static com.graphhopper.util.Helper.getMemInfo;
 
 /**
- * This class handles the different CH preparations and serves the corresponding {@link RoutingAlgorithmFactory}
+ * This class handles the different CH preparations
  *
  * @author Peter Karich
  * @author easbar
  */
 public class CHPreparationHandler {
-    private final Logger LOGGER = LoggerFactory.getLogger(getClass());
-    private final List<PrepareContractionHierarchies> preparations = new ArrayList<>();
+    private static final Logger LOGGER = LoggerFactory.getLogger(CHPreparationHandler.class);
     // we first add the profiles and later read them to create the config objects (because they require
     // the actual Weightings)
     private final List<CHProfile> chProfiles = new ArrayList<>();
-    private final List<CHConfig> chConfigs = new ArrayList<>();
-    private boolean disablingAllowed = false;
     private int preparationThreads;
-    private ExecutorService threadPool;
     private PMap pMap = new PMap();
 
     public CHPreparationHandler() {
@@ -67,75 +62,12 @@ public class CHPreparationHandler {
             throw new IllegalStateException("Use profiles_ch instead of prepare.ch.edge_based, see #1922 and docs/core/profiles.md");
 
         setPreparationThreads(ghConfig.getInt(CH.PREPARE + "threads", getPreparationThreads()));
-        setDisablingAllowed(ghConfig.getBool(CH.INIT_DISABLING_ALLOWED, isDisablingAllowed()));
         setCHProfiles(ghConfig.getCHProfiles());
         pMap = ghConfig.asPMap();
     }
 
     public final boolean isEnabled() {
-        return !chProfiles.isEmpty() || !chConfigs.isEmpty() || !preparations.isEmpty();
-    }
-
-    public final boolean isDisablingAllowed() {
-        return disablingAllowed;
-    }
-
-    /**
-     * This method specifies if it is allowed to disable CH routing at runtime via routing hints.
-     */
-    public final CHPreparationHandler setDisablingAllowed(boolean disablingAllowed) {
-        this.disablingAllowed = disablingAllowed;
-        return this;
-    }
-
-    /**
-     * Decouple CH profiles from PrepareContractionHierarchies as we need CH profiles for the
-     * graphstorage and the graphstorage for the preparation.
-     */
-    public CHPreparationHandler addCHConfig(CHConfig chConfig) {
-        chConfigs.add(chConfig);
-        return this;
-    }
-
-    public CHPreparationHandler addPreparation(PrepareContractionHierarchies pch) {
-        // we want to make sure that CH preparations are added in the same order as their corresponding profiles
-        if (preparations.size() >= chConfigs.size()) {
-            throw new IllegalStateException("You need to add the corresponding CH configs before adding preparations.");
-        }
-        CHConfig expectedConfig = chConfigs.get(preparations.size());
-        if (!pch.getCHConfig().equals(expectedConfig)) {
-            throw new IllegalArgumentException("CH config of preparation: " + pch + " needs to be identical to previously added CH config: " + expectedConfig);
-        }
-        preparations.add(pch);
-        return this;
-    }
-
-    public final boolean hasCHConfigs() {
-        return !chConfigs.isEmpty();
-    }
-
-    public List<CHConfig> getCHConfigs() {
-        return chConfigs;
-    }
-
-    public List<CHConfig> getNodeBasedCHConfigs() {
-        List<CHConfig> result = new ArrayList<>();
-        for (CHConfig chConfig : chConfigs) {
-            if (!chConfig.getTraversalMode().isEdgeBased()) {
-                result.add(chConfig);
-            }
-        }
-        return result;
-    }
-
-    public List<CHConfig> getEdgeBasedCHConfigs() {
-        List<CHConfig> result = new ArrayList<>();
-        for (CHConfig chConfig : chConfigs) {
-            if (chConfig.getTraversalMode().isEdgeBased()) {
-                result.add(chConfig);
-            }
-        }
-        return result;
+        return !chProfiles.isEmpty();
     }
 
     public CHPreparationHandler setCHProfiles(CHProfile... chProfiles) {
@@ -143,10 +75,6 @@ public class CHPreparationHandler {
         return this;
     }
 
-    /**
-     * Enables the use of contraction hierarchies to reduce query times.
-     * "fastest|u_turn_costs=30 or your own weight-calculation type.
-     */
     public CHPreparationHandler setCHProfiles(Collection<CHProfile> chProfiles) {
         this.chProfiles.clear();
         this.chProfiles.addAll(chProfiles);
@@ -155,37 +83,6 @@ public class CHPreparationHandler {
 
     public List<CHProfile> getCHProfiles() {
         return chProfiles;
-    }
-
-    public List<PrepareContractionHierarchies> getPreparations() {
-        return preparations;
-    }
-
-    /**
-     * @return a {@link RoutingAlgorithmFactory} for CH or throw an error if no preparation is available for the given
-     * profile name
-     */
-    public RoutingAlgorithmFactory getAlgorithmFactory(String profile) {
-        return getPreparation(profile).getRoutingAlgorithmFactory();
-    }
-
-    public PrepareContractionHierarchies getPreparation(String profile) {
-        if (preparations.isEmpty())
-            throw new IllegalStateException("No CH preparations added yet");
-        List<String> profileNames = new ArrayList<>(preparations.size());
-        for (PrepareContractionHierarchies preparation : preparations) {
-            profileNames.add(preparation.getCHConfig().getName());
-            if (preparation.getCHConfig().getName().equalsIgnoreCase(profile)) {
-                return preparation;
-            }
-        }
-        throw new IllegalArgumentException("Cannot find CH preparation for the requested profile: '" + profile + "'" +
-                "\nYou can try disabling CH using " + CH.DISABLE + "=true" +
-                "\navailable CH profiles: " + profileNames);
-    }
-
-    public PrepareContractionHierarchies getPreparation(CHConfig chConfig) {
-        return getPreparation(chConfig.getName());
     }
 
     public int getPreparationThreads() {
@@ -198,55 +95,59 @@ public class CHPreparationHandler {
      */
     public void setPreparationThreads(int preparationThreads) {
         this.preparationThreads = preparationThreads;
-        this.threadPool = java.util.concurrent.Executors.newFixedThreadPool(preparationThreads);
     }
 
-    public void prepare(final StorableProperties properties, final boolean closeEarly) {
-        ExecutorCompletionService<String> completionService = new ExecutorCompletionService<>(threadPool);
-        int counter = 0;
-        for (final PrepareContractionHierarchies prepare : preparations) {
-            LOGGER.info((++counter) + "/" + preparations.size() + " calling " +
+    public Map<String, RoutingCHGraph> load(BaseGraph graph, List<CHConfig> chConfigs) {
+        Map<String, RoutingCHGraph> loaded = Collections.synchronizedMap(new LinkedHashMap<>());
+        Stream<Runnable> runnables = chConfigs.stream()
+                .map(c -> () -> {
+                    CHStorage chStorage = new CHStorage(graph.getDirectory(), c.getName(), graph.getSegmentSize(), c.isEdgeBased());
+                    if (chStorage.loadExisting())
+                        loaded.put(c.getName(), RoutingCHGraphImpl.fromGraph(graph, chStorage, c));
+                    else {
+                        // todo: this is ugly, see comments in LMPreparationHandler
+                        graph.getDirectory().remove("nodes_ch_" + c.getName());
+                        graph.getDirectory().remove("shortcuts_" + c.getName());
+                    }
+                });
+        GHUtility.runConcurrently(runnables, preparationThreads);
+        return loaded;
+    }
+
+    public Map<String, PrepareContractionHierarchies.Result> prepare(BaseGraph baseGraph, StorableProperties properties, List<CHConfig> chConfigs, final boolean closeEarly) {
+        if (chConfigs.isEmpty()) {
+            LOGGER.info("There are no CHs to prepare");
+            return Collections.emptyMap();
+        }
+        LOGGER.info("Creating CH preparations, {}", getMemInfo());
+        List<PrepareContractionHierarchies> preparations = chConfigs.stream()
+                .map(c -> createCHPreparation(baseGraph, c))
+                .collect(Collectors.toList());
+        Map<String, PrepareContractionHierarchies.Result> results = Collections.synchronizedMap(new LinkedHashMap<>());
+        List<Runnable> runnables = new ArrayList<>(preparations.size());
+        for (int i = 0; i < preparations.size(); ++i) {
+            PrepareContractionHierarchies prepare = preparations.get(i);
+            LOGGER.info((i + 1) + "/" + preparations.size() + " calling " +
                     "CH prepare.doWork for profile '" + prepare.getCHConfig().getName() + "' " + prepare.getCHConfig().getTraversalMode() + " ... (" + getMemInfo() + ")");
-            final String name = prepare.getCHConfig().getName();
-            completionService.submit(new Runnable() {
-                @Override
-                public void run() {
-                    // toString is not taken into account so we need to cheat, see http://stackoverflow.com/q/6113746/194609 for other options
-                    Thread.currentThread().setName(name);
-                    prepare.doWork();
-                    if (closeEarly)
-                        prepare.close();
-
-                    properties.put(CH.PREPARE + "date." + name, createFormatter().format(new Date()));
-                }
-            }, name);
+            runnables.add(() -> {
+                final String name = prepare.getCHConfig().getName();
+                // toString is not taken into account so we need to cheat, see http://stackoverflow.com/q/6113746/194609 for other options
+                Thread.currentThread().setName(name);
+                PrepareContractionHierarchies.Result result = prepare.doWork();
+                results.put(name, result);
+                prepare.flush();
+                if (closeEarly)
+                    prepare.close();
+                properties.put(CH.PREPARE + "date." + name, createFormatter().format(new Date()));
+            });
         }
-
-        threadPool.shutdown();
-
-        try {
-            for (int i = 0; i < preparations.size(); i++) {
-                completionService.take().get();
-            }
-        } catch (Exception e) {
-            threadPool.shutdownNow();
-            throw new RuntimeException(e);
-        }
+        GHUtility.runConcurrently(runnables.stream(), preparationThreads);
+        LOGGER.info("Finished CH preparation, {}", getMemInfo());
+        return results;
     }
 
-    public void createPreparations(GraphHopperStorage ghStorage) {
-        if (!isEnabled() || !preparations.isEmpty())
-            return;
-        if (!hasCHConfigs())
-            throw new IllegalStateException("No CH profiles found");
-
-        for (CHConfig chConfig : chConfigs) {
-            addPreparation(createCHPreparation(ghStorage, chConfig));
-        }
-    }
-
-    private PrepareContractionHierarchies createCHPreparation(GraphHopperStorage ghStorage, CHConfig chConfig) {
-        PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraphHopperStorage(ghStorage, chConfig);
+    private PrepareContractionHierarchies createCHPreparation(BaseGraph graph, CHConfig chConfig) {
+        PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraph(graph, chConfig);
         pch.setParams(pMap);
         return pch;
     }

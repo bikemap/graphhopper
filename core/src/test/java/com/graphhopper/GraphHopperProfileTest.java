@@ -23,8 +23,6 @@ import com.graphhopper.config.CHProfile;
 import com.graphhopper.config.LMProfile;
 import com.graphhopper.config.Profile;
 import com.graphhopper.jackson.Jackson;
-import com.graphhopper.jackson.ProfileMixIn;
-import com.graphhopper.routing.util.EncodingManager;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -38,13 +36,12 @@ public class GraphHopperProfileTest {
 
     @Test
     public void deserialize() throws IOException {
-        ObjectMapper objectMapper = Jackson.newObjectMapper()
-                .addMixIn(Profile.class, ProfileMixIn.class);
-        String json = "{\"name\":\"my_car\",\"vehicle\":\"car\",\"weighting\":\"fastest\",\"turn_costs\":true,\"foo\":\"bar\",\"baz\":\"buzz\"}";
+        ObjectMapper objectMapper = Jackson.newObjectMapper();
+        String json = "{\"name\":\"my_car\",\"vehicle\":\"car\",\"weighting\":\"custom\",\"turn_costs\":true,\"foo\":\"bar\",\"baz\":\"buzz\"}";
         Profile profile = objectMapper.readValue(json, Profile.class);
         assertEquals("my_car", profile.getName());
         assertEquals("car", profile.getVehicle());
-        assertEquals("fastest", profile.getWeighting());
+        assertEquals("custom", profile.getWeighting());
         assertTrue(profile.isTurnCosts());
         assertEquals(2, profile.getHints().toMap().size());
         assertEquals("bar", profile.getHints().getString("foo", ""));
@@ -53,53 +50,52 @@ public class GraphHopperProfileTest {
 
     @Test
     public void duplicateProfileName_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car"));
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.setProfiles(
-                        new Profile("my_profile").setVehicle("car").setWeighting("fastest"),
-                        new Profile("your_profile").setVehicle("car").setWeighting("short_fastest"),
-                        new Profile("my_profile").setVehicle("car").setWeighting("shortest")
-                );
-            }
-        }, "Profile names must be unique. Duplicate name: 'my_profile'");
+        final GraphHopper hopper = createHopper();
+        assertIllegalArgument(() -> hopper.setProfiles(
+                new Profile("my_profile").setVehicle("car"),
+                new Profile("your_profile").setVehicle("car"),
+                new Profile("my_profile").setVehicle("car")
+        ), "Profile names must be unique. Duplicate name: 'my_profile'");
     }
 
     @Test
     public void vehicleDoesNotExist_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car"));
-        hopper.setProfiles(new Profile("profile").setVehicle("your_car"));
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.load(GH_LOCATION);
-            }
-        }, "Unknown vehicle 'your_car' in profile: name=profile");
+        final GraphHopper hopper = new GraphHopper();
+        hopper.setGraphHopperLocation(GH_LOCATION).setStoreOnFlush(false).
+                setProfiles(new Profile("profile").setVehicle("your_car"));
+        assertIllegalArgument(hopper::importOrLoad, "entry in vehicle list not supported: your_car");
     }
 
     @Test
-    public void vehicleWithoutTurnCostSupport_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car"));
-        hopper.setProfiles(new Profile("profile").setVehicle("car").setTurnCosts(true));
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.load(GH_LOCATION);
-            }
-        }, "The profile 'profile' was configured with 'turn_costs=true', but the corresponding vehicle 'car' does not support turn costs");
+    public void vehicleDoesNotExist_error2() {
+        final GraphHopper hopper = new GraphHopper().setGraphHopperLocation(GH_LOCATION).setStoreOnFlush(false).
+                setProfiles(new Profile("profile").setVehicle("your_car"));
+        assertIllegalArgument(hopper::importOrLoad, "entry in vehicle list not supported: your_car");
+    }
+
+    @Test
+    public void oneVehicleTwoProfilesWithAndWithoutTC_noError() {
+        final GraphHopper hopper = createHopper();
+        hopper.setProfiles(
+                new Profile("profile1").setVehicle("car").setTurnCosts(false),
+                new Profile("profile2").setVehicle("car").setTurnCosts(true));
+        hopper.load();
+    }
+
+    @Test
+    public void oneVehicleTwoProfilesWithAndWithoutTC2_noError() {
+        final GraphHopper hopper = createHopper();
+        hopper.setProfiles(
+                new Profile("profile2").setVehicle("car").setTurnCosts(true),
+                new Profile("profile1").setVehicle("car").setTurnCosts(false));
+        hopper.load();
     }
 
     @Test
     public void profileWithUnknownWeighting_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car"));
+        final GraphHopper hopper = createHopper();
         hopper.setProfiles(new Profile("profile").setVehicle("car").setWeighting("your_weighting"));
-        assertIllegalArgument(new Runnable() {
-                                  @Override
-                                  public void run() {
-                                      hopper.load(GH_LOCATION);
-                                  }
-                              },
+        assertIllegalArgument(hopper::importOrLoad,
                 "Could not create weighting for profile: 'profile'",
                 "Weighting 'your_weighting' not supported"
         );
@@ -107,80 +103,55 @@ public class GraphHopperProfileTest {
 
     @Test
     public void chProfileDoesNotExist_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car"));
+        final GraphHopper hopper = createHopper();
         hopper.setProfiles(new Profile("profile1").setVehicle("car"));
         hopper.getCHPreparationHandler().setCHProfiles(new CHProfile("other_profile"));
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.load(GH_LOCATION);
-            }
-        }, "CH profile references unknown profile 'other_profile'");
+        assertIllegalArgument(hopper::importOrLoad, "CH profile references unknown profile 'other_profile'");
     }
 
     @Test
     public void duplicateCHProfile_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car"));
+        final GraphHopper hopper = createHopper();
         hopper.setProfiles(new Profile("profile").setVehicle("car"));
         hopper.getCHPreparationHandler().setCHProfiles(
                 new CHProfile("profile"),
                 new CHProfile("profile")
         );
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.load(GH_LOCATION);
-            }
-        }, "Duplicate CH reference to profile 'profile'");
+        assertIllegalArgument(hopper::importOrLoad, "Duplicate CH reference to profile 'profile'");
     }
 
     @Test
     public void lmProfileDoesNotExist_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car"));
+        final GraphHopper hopper = createHopper();
         hopper.setProfiles(new Profile("profile1").setVehicle("car"));
         hopper.getLMPreparationHandler().setLMProfiles(new LMProfile("other_profile"));
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.load(GH_LOCATION);
-            }
-        }, "LM profile references unknown profile 'other_profile'");
+        assertIllegalArgument(hopper::importOrLoad, "LM profile references unknown profile 'other_profile'");
     }
 
     @Test
     public void duplicateLMProfile_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car"));
+        final GraphHopper hopper = createHopper();
         hopper.setProfiles(new Profile("profile").setVehicle("car"));
         hopper.getLMPreparationHandler().setLMProfiles(
                 new LMProfile("profile"),
                 new LMProfile("profile")
         );
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.load(GH_LOCATION);
-            }
-        }, "Multiple LM profiles are using the same profile 'profile'");
+        assertIllegalArgument(hopper::importOrLoad, "Multiple LM profiles are using the same profile 'profile'");
     }
 
     @Test
     public void unknownLMPreparationProfile_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car"));
+        final GraphHopper hopper = createHopper();
         hopper.setProfiles(new Profile("profile").setVehicle("car"));
         hopper.getLMPreparationHandler().setLMProfiles(
                 new LMProfile("profile").setPreparationProfile("xyz")
         );
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.load(GH_LOCATION);
-            }
-        }, "LM profile references unknown preparation profile 'xyz'");
+        assertIllegalArgument(hopper::importOrLoad, "LM profile references unknown preparation profile 'xyz'");
     }
 
     @Test
     public void lmPreparationProfileChain_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car,bike,foot"));
+        final GraphHopper hopper = createHopper();
         hopper.setProfiles(
                 new Profile("profile1").setVehicle("car"),
                 new Profile("profile2").setVehicle("bike"),
@@ -191,17 +162,12 @@ public class GraphHopperProfileTest {
                 new LMProfile("profile2").setPreparationProfile("profile1"),
                 new LMProfile("profile3").setPreparationProfile("profile2")
         );
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.load(GH_LOCATION);
-            }
-        }, "Cannot use 'profile2' as preparation_profile for LM profile 'profile3', because it uses another profile for preparation itself.");
+        assertIllegalArgument(hopper::importOrLoad, "Cannot use 'profile2' as preparation_profile for LM profile 'profile3', because it uses another profile for preparation itself.");
     }
 
     @Test
     public void noLMProfileForPreparationProfile_error() {
-        final GraphHopper hopper = createHopper(EncodingManager.create("car,bike,foot"));
+        final GraphHopper hopper = createHopper();
         hopper.setProfiles(
                 new Profile("profile1").setVehicle("car"),
                 new Profile("profile2").setVehicle("bike"),
@@ -210,19 +176,13 @@ public class GraphHopperProfileTest {
         hopper.getLMPreparationHandler().setLMProfiles(
                 new LMProfile("profile1").setPreparationProfile("profile2")
         );
-        assertIllegalArgument(new Runnable() {
-            @Override
-            public void run() {
-                hopper.load(GH_LOCATION);
-            }
-        }, "Unknown LM preparation profile 'profile2' in LM profile 'profile1' cannot be used as preparation_profile");
+        assertIllegalArgument(hopper::importOrLoad, "Unknown LM preparation profile 'profile2' in LM profile 'profile1' cannot be used as preparation_profile");
     }
 
-    private GraphHopper createHopper(EncodingManager encodingManager) {
+    private GraphHopper createHopper() {
         final GraphHopper hopper = new GraphHopper();
         hopper.setGraphHopperLocation(GH_LOCATION);
         hopper.setStoreOnFlush(false);
-        hopper.setEncodingManager(encodingManager);
         return hopper;
     }
 

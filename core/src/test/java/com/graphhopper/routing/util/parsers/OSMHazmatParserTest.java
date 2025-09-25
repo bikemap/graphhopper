@@ -1,59 +1,56 @@
 package com.graphhopper.routing.util.parsers;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.ev.EnumEncodedValue;
-import com.graphhopper.routing.ev.Hazmat;
-import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.storage.IntsRef;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class OSMHazmatParserTest {
-
-    private EncodingManager em;
-    private EnumEncodedValue<Hazmat> hazEnc;
+    private final EnumEncodedValue<Hazmat> hazEnc = Hazmat.create();
     private OSMHazmatParser parser;
     private IntsRef relFlags;
 
-    @Before
+    @BeforeEach
     public void setUp() {
-        parser = new OSMHazmatParser();
-        em = new EncodingManager.Builder().add(parser).build();
-        relFlags = em.createRelationFlags();
-        hazEnc = em.getEnumEncodedValue(Hazmat.KEY, Hazmat.class);
+        hazEnc.init(new EncodedValue.InitializerConfig());
+        parser = new OSMHazmatParser(hazEnc);
+        relFlags = new IntsRef(2);
     }
 
     @Test
     public void testSimpleTags() {
         ReaderWay readerWay = new ReaderWay(1);
-        IntsRef intsRef = em.createEdgeFlags();
+        EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
         readerWay.setTag("hazmat", "no");
-        parser.handleWayTags(intsRef, readerWay, false, relFlags);
-        assertEquals(Hazmat.NO, hazEnc.getEnum(false, intsRef));
+        parser.handleWayTags(edgeId, edgeIntAccess, readerWay, relFlags);
+        assertEquals(Hazmat.NO, hazEnc.getEnum(false, edgeId, edgeIntAccess));
 
-        intsRef = em.createEdgeFlags();
+        edgeIntAccess = new ArrayEdgeIntAccess(1);
         readerWay.setTag("hazmat", "yes");
-        parser.handleWayTags(intsRef, readerWay, false, relFlags);
-        assertEquals(Hazmat.YES, hazEnc.getEnum(false, intsRef));
+        parser.handleWayTags(edgeId, edgeIntAccess, readerWay, relFlags);
+        assertEquals(Hazmat.YES, hazEnc.getEnum(false, edgeId, edgeIntAccess));
 
-        intsRef = em.createEdgeFlags();
+        edgeIntAccess = new ArrayEdgeIntAccess(1);
         readerWay.setTag("hazmat", "designated");
-        parser.handleWayTags(intsRef, readerWay, false, relFlags);
-        assertEquals(Hazmat.YES, hazEnc.getEnum(false, intsRef));
+        parser.handleWayTags(edgeId, edgeIntAccess, readerWay, relFlags);
+        assertEquals(Hazmat.YES, hazEnc.getEnum(false, edgeId, edgeIntAccess));
 
-        intsRef = em.createEdgeFlags();
+        edgeIntAccess = new ArrayEdgeIntAccess(1);
         readerWay.setTag("hazmat", "designated");
-        parser.handleWayTags(intsRef, readerWay, false, relFlags);
-        assertEquals(Hazmat.YES, hazEnc.getEnum(false, intsRef));
+        parser.handleWayTags(edgeId, edgeIntAccess, readerWay, relFlags);
+        assertEquals(Hazmat.YES, hazEnc.getEnum(false, edgeId, edgeIntAccess));
     }
 
     @Test
     public void testNoNPE() {
         ReaderWay readerWay = new ReaderWay(1);
-        IntsRef intsRef = em.createEdgeFlags();
-        parser.handleWayTags(intsRef, readerWay, false, relFlags);
-        assertEquals(Hazmat.YES, hazEnc.getEnum(false, intsRef));
+        EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
+        parser.handleWayTags(edgeId, edgeIntAccess, readerWay, relFlags);
+        assertEquals(Hazmat.YES, hazEnc.getEnum(false, edgeId, edgeIntAccess));
     }
 }

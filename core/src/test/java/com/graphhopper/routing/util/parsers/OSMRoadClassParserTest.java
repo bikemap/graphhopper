@@ -1,63 +1,68 @@
 package com.graphhopper.routing.util.parsers;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.ev.EnumEncodedValue;
-import com.graphhopper.routing.ev.RoadClass;
-import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.storage.IntsRef;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class OSMRoadClassParserTest {
-
-    private EncodingManager em;
-    private IntsRef relFlags;
     private EnumEncodedValue<RoadClass> rcEnc;
     private OSMRoadClassParser parser;
+    private IntsRef relFlags;
 
-    @Before
+    @BeforeEach
     public void setUp() {
-        parser = new OSMRoadClassParser();
-        em = new EncodingManager.Builder().add(parser).build();
-        relFlags = em.createRelationFlags();
-        rcEnc = em.getEnumEncodedValue(RoadClass.KEY, RoadClass.class);
+        rcEnc = RoadClass.create();
+        rcEnc.init(new EncodedValue.InitializerConfig());
+        parser = new OSMRoadClassParser(rcEnc);
+        relFlags = new IntsRef(2);
     }
 
     @Test
     public void testSimpleTags() {
         ReaderWay readerWay = new ReaderWay(1);
-        IntsRef edgeFlags = em.createEdgeFlags();
+        ArrayEdgeIntAccess intAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
         readerWay.setTag("highway", "primary");
-        parser.handleWayTags(edgeFlags, readerWay, false, relFlags);
-        assertEquals(RoadClass.PRIMARY, rcEnc.getEnum(false, edgeFlags));
+        parser.handleWayTags(edgeId, intAccess, readerWay, relFlags);
+        assertEquals(RoadClass.PRIMARY, rcEnc.getEnum(false, edgeId, intAccess));
 
-        edgeFlags = em.createEdgeFlags();
+        intAccess = new ArrayEdgeIntAccess(1);
         readerWay.setTag("highway", "unknownstuff");
-        parser.handleWayTags(edgeFlags, readerWay, false, relFlags);
-        assertEquals(RoadClass.OTHER, rcEnc.getEnum(false, edgeFlags));
+        parser.handleWayTags(edgeId, intAccess, readerWay, relFlags);
+        assertEquals(RoadClass.OTHER, rcEnc.getEnum(false, edgeId, intAccess));
 
-        edgeFlags = em.createEdgeFlags();
+        intAccess = new ArrayEdgeIntAccess(1);
         readerWay.setTag("highway", "motorway_link");
-        parser.handleWayTags(edgeFlags, readerWay, false, relFlags);
-        assertEquals(RoadClass.MOTORWAY, rcEnc.getEnum(false, edgeFlags));
+        parser.handleWayTags(edgeId, intAccess, readerWay, relFlags);
+        assertEquals(RoadClass.MOTORWAY, rcEnc.getEnum(false, edgeId, intAccess));
+
+        readerWay = new ReaderWay(1);
+        readerWay.setTag("highway", "cycleway");
+        intAccess = new ArrayEdgeIntAccess(1);
+        parser.handleWayTags(edgeId, intAccess, readerWay, relFlags);
+        assertEquals(RoadClass.CYCLEWAY, rcEnc.getEnum(false, edgeId, intAccess));
     }
 
     @Test
     public void testIgnore() {
         ReaderWay readerWay = new ReaderWay(1);
-        IntsRef edgeFlags = em.createEdgeFlags();
+        EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
         readerWay.setTag("route", "ferry");
-        parser.handleWayTags(edgeFlags, readerWay, true, relFlags);
-        assertEquals(RoadClass.OTHER, rcEnc.getEnum(false, edgeFlags));
+        parser.handleWayTags(edgeId, edgeIntAccess, readerWay, relFlags);
+        assertEquals(RoadClass.OTHER, rcEnc.getEnum(false, edgeId, edgeIntAccess));
     }
 
     @Test
     public void testNoNPE() {
         ReaderWay readerWay = new ReaderWay(1);
-        IntsRef edgeFlags = em.createEdgeFlags();
-        parser.handleWayTags(edgeFlags, readerWay, false, relFlags);
-        assertEquals(RoadClass.OTHER, rcEnc.getEnum(false, edgeFlags));
+        ArrayEdgeIntAccess intAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
+        parser.handleWayTags(edgeId, intAccess, readerWay, relFlags);
+        assertEquals(RoadClass.OTHER, rcEnc.getEnum(false, edgeId, intAccess));
     }
 }

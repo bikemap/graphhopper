@@ -19,33 +19,34 @@ package com.graphhopper.routing.ev;
 
 import com.graphhopper.util.Helper;
 
+/**
+ * This enum defines the route network of an edge when part of a hiking or biking network.
+ * If not tagged the value will be MISSING (default) and all edges that do not fit get OTHER as value.
+ */
 public enum RouteNetwork {
 
-    OTHER("other"), INTERNATIONAL("international"), NATIONAL("national"), REGIONAL("regional"),
-    LOCAL("local");
+    MISSING, INTERNATIONAL, NATIONAL, REGIONAL, LOCAL, OTHER;
 
     public static String key(String prefix) {
         return prefix + "_network";
     }
 
-    private final String name;
-
-    RouteNetwork(String name) {
-        this.name = name;
+    public static EnumEncodedValue<RouteNetwork> create(String name) {
+        return new EnumEncodedValue<>(name, RouteNetwork.class);
     }
 
     @Override
     public String toString() {
-        return name;
+        return Helper.toLowerCase(super.toString());
     }
 
     public static RouteNetwork find(String name) {
-        if (name == null)
-            return OTHER;
+        if (Helper.isEmpty(name))
+            return MISSING;
         try {
             return RouteNetwork.valueOf(Helper.toUpperCase(name));
         } catch (IllegalArgumentException ex) {
-            return OTHER;
+            return MISSING;
         }
     }
 }

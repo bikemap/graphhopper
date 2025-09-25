@@ -19,30 +19,26 @@ package com.graphhopper.routing.util.parsers;
 
 import com.graphhopper.reader.ReaderRelation;
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.ev.EncodedValue;
-import com.graphhopper.routing.ev.EncodedValueLookup;
-import com.graphhopper.routing.ev.EnumEncodedValue;
-import com.graphhopper.routing.ev.RouteNetwork;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.Helper;
-
-import java.util.List;
 
 import static com.graphhopper.routing.util.EncodingManager.getKey;
 
 public class OSMFootNetworkTagParser implements RelationTagParser {
-    private EnumEncodedValue<RouteNetwork> footRouteEnc;
+    private final EnumEncodedValue<RouteNetwork> footRouteEnc;
     // used for internal transformation from relations into footRouteEnc
-    private EnumEncodedValue<RouteNetwork> transformerRouteRelEnc;
+    private final EnumEncodedValue<RouteNetwork> transformerRouteRelEnc = new EnumEncodedValue<>(getKey("foot", "route_relation"), RouteNetwork.class);
 
-    @Override
-    public void createRelationEncodedValues(EncodedValueLookup lookup, List<EncodedValue> registerNewEncodedValue) {
-        registerNewEncodedValue.add(transformerRouteRelEnc = new EnumEncodedValue<>(getKey("foot", "route_relation"), RouteNetwork.class));
+    public OSMFootNetworkTagParser(EnumEncodedValue<RouteNetwork> footRouteEnc, EncodedValue.InitializerConfig relConfig) {
+        this.footRouteEnc = footRouteEnc;
+        this.transformerRouteRelEnc.init(relConfig);
     }
 
     @Override
-    public IntsRef handleRelationTags(IntsRef relFlags, ReaderRelation relation) {
-        RouteNetwork oldFootNetwork = transformerRouteRelEnc.getEnum(false, relFlags);
+    public void handleRelationTags(IntsRef relFlags, ReaderRelation relation) {
+        IntsRefEdgeIntAccess relIntAccess = new IntsRefEdgeIntAccess(relFlags);
+        RouteNetwork oldFootNetwork = transformerRouteRelEnc.getEnum(false, -1, relIntAccess);
         if (relation.hasTag("route", "hiking") || relation.hasTag("route", "foot")) {
             String tag = Helper.toLowerCase(relation.getTag("network", ""));
             RouteNetwork newFootNetwork = RouteNetwork.LOCAL;
@@ -55,23 +51,16 @@ public class OSMFootNetworkTagParser implements RelationTagParser {
             } else if ("iwn".equals(tag)) {
                 newFootNetwork = RouteNetwork.INTERNATIONAL;
             }
-            if (oldFootNetwork == RouteNetwork.OTHER || oldFootNetwork.ordinal() > newFootNetwork.ordinal())
-                transformerRouteRelEnc.setEnum(false, relFlags, newFootNetwork);
+            if (oldFootNetwork == RouteNetwork.MISSING || oldFootNetwork.ordinal() > newFootNetwork.ordinal())
+                transformerRouteRelEnc.setEnum(false, -1, relIntAccess, newFootNetwork);
         }
-
-        return relFlags;
     }
 
     @Override
-    public void createEncodedValues(EncodedValueLookup lookup, List<EncodedValue> registerNewEncodedValue) {
-        registerNewEncodedValue.add(footRouteEnc = new EnumEncodedValue<>(RouteNetwork.key("foot"), RouteNetwork.class));
-    }
-
-    @Override
-    public IntsRef handleWayTags(IntsRef edgeFlags, ReaderWay way, boolean ferry, IntsRef relationFlags) {
+    public void handleWayTags(int edgeId, EdgeIntAccess edgeIntAccess, ReaderWay way, IntsRef relationFlags) {
         // just copy value into different bit range
-        RouteNetwork footNetwork = transformerRouteRelEnc.getEnum(false, relationFlags);
-        footRouteEnc.setEnum(false, edgeFlags, footNetwork);
-        return edgeFlags;
+        IntsRefEdgeIntAccess relIntAccess = new IntsRefEdgeIntAccess(relationFlags);
+        RouteNetwork footNetwork = transformerRouteRelEnc.getEnum(false, -1, relIntAccess);
+        footRouteEnc.setEnum(false, edgeId, edgeIntAccess, footNetwork);
     }
 }
