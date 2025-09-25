@@ -36,30 +36,6 @@ public class GraphHopperManaged implements Managed {
         } else {
             graphHopper = new GraphHopper();
         }
-
-        ObjectMapper yamlOM = Jackson.initObjectMapper(new ObjectMapper(new YAMLFactory()));
-        ObjectMapper jsonOM = Jackson.newObjectMapper();
-        List<Profile> newProfiles = new ArrayList<>();
-        for (Profile profile : configuration.getProfiles()) {
-            if (!CustomWeighting.NAME.equals(profile.getWeighting())) {
-                newProfiles.add(profile);
-                continue;
-            }
-            String customModelLocation = profile.getHints().getString("custom_model_file", "");
-            if (customModelLocation.isEmpty())
-                throw new IllegalArgumentException("Missing 'custom_model_file' field in profile '" + profile.getName() + "' if you want an empty custom model set it to 'empty'");
-            if ("empty".equals(customModelLocation))
-                newProfiles.add(new CustomProfile(profile).setCustomModel(new CustomModel()));
-            else
-                try {
-                    CustomModel customModel = (customModelLocation.endsWith(".json") ? jsonOM : yamlOM).readValue(new File(customModelLocation), CustomModel.class);
-                    newProfiles.add(new CustomProfile(profile).setCustomModel(customModel));
-                } catch (Exception ex) {
-                    throw new RuntimeException("Cannot load custom_model from " + customModelLocation + " for profile " + profile.getName(), ex);
-                }
-        }
-        configuration.setProfiles(newProfiles);
-
         graphHopper.init(configuration);
     }
 

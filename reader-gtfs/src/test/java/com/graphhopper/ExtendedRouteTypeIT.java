@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Arrays;
 
 import static com.graphhopper.gtfs.GtfsHelper.time;
 import static org.junit.jupiter.api.Assertions.assertEquals;

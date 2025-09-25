@@ -281,35 +281,6 @@ public class DistanceCalcEarth implements DistanceCalc {
         return new GHPoint(projectedLat, projectedLon);
     }
 
-    public double calcDistance(PointList pointList) {
-        return internCalcDistance(pointList, pointList.is3D());
-    }
-
-    public static double calcDistance(PointList pointList, boolean is3d) {
-        return DistanceCalcEarth.DIST_EARTH.internCalcDistance(pointList, is3d);
-    }
-
-    private double internCalcDistance(PointList pointList, boolean is3d) {
-        double prevLat = Double.NaN;
-        double prevLon = Double.NaN;
-        double prevEle = Double.NaN;
-        double dist = 0;
-        for (int i = 0; i < pointList.size(); i++) {
-            if (i > 0) {
-                if (is3d)
-                    dist += calcDist3D(prevLat, prevLon, prevEle, pointList.getLat(i), pointList.getLon(i), pointList.getEle(i));
-                else
-                    dist += calcDist(prevLat, prevLon, pointList.getLat(i), pointList.getLon(i));
-            }
-
-            prevLat = pointList.getLat(i);
-            prevLon = pointList.getLon(i);
-            if (pointList.is3D())
-                prevEle = pointList.getEle(i);
-        }
-        return dist;
-    }
-
     @Override
     public GHPoint intermediatePoint(double f, double lat1, double lon1, double lat2, double lon2) {
         double lat1radians = Math.toRadians(lat1);

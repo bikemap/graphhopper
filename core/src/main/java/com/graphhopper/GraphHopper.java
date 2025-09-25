@@ -78,7 +78,7 @@ public class GraphHopper {
     private final Map<String, Profile> profilesByName = new LinkedHashMap<>();
     private final String fileLockName = "gh.lock";
     // utils
-    private final TranslationMap trMap;
+    private final TranslationMap trMap = new TranslationMap().doImport();
     boolean removeZipped = true;
     // for country rules:
     private CountryRuleFactory countryRuleFactory = null;

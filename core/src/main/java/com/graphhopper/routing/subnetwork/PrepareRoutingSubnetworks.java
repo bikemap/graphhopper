@@ -189,7 +189,6 @@ public class PrepareRoutingSubnetworks {
         } else {
             return 0;
         }
-        logger.info("Removed " + removedNodes + " nodes from the graph as they aren't used by any vehicle after removing subnetworks");
     }
 
     public static class PrepareJob {
@@ -204,23 +203,6 @@ public class PrepareRoutingSubnetworks {
         @Override
         public String toString() {
             return subnetworkEnc.getName() + "|" + weighting;
-        }
-    }
-
-    public static class PrepareJob {
-        private final String name;
-        private final BooleanEncodedValue accessEnc;
-        private final TurnCostProvider turnCostProvider;
-
-        public PrepareJob(String name, BooleanEncodedValue accessEnc, TurnCostProvider turnCostProvider) {
-            this.name = name;
-            this.accessEnc = accessEnc;
-            this.turnCostProvider = turnCostProvider;
-        }
-
-        @Override
-        public String toString() {
-            return name + "|" + (turnCostProvider == null ? "node-based" : "edge-based");
         }
     }
 }

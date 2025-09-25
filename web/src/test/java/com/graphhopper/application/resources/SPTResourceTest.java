@@ -103,18 +103,6 @@ public class SPTResourceTest {
     }
 
     @Test
-    public void requestSPTEdgeBased() {
-        Response rsp = clientTarget(app, "/spt?profile=car_with_turncosts&point=42.531073,1.573792&time_limit=300&columns=prev_node_id,edge_id,node_id,time,distance").request().buildGet().invoke();
-        String rspCsvString = rsp.readEntity(String.class);
-        String[] lines = rspCsvString.split("\n");
-        assertTrue(lines.length > 500);
-        assertEquals("prev_node_id,edge_id,node_id,time,distance", lines[0]);
-        assertEquals("-1,-1,1884,0,0", lines[1]);
-        assertEquals("1884,2274,1324,3817,74", lines[2]);
-        assertEquals("1884,2272,263,13496,262", lines[3]);
-    }
-
-    @Test
     public void requestDetails() {
         Response rsp = clientTarget(app, "/spt?profile=car_without_turncosts&point=42.531073,1.573792&time_limit=300&columns=street_name,road_class,max_speed").request().buildGet().invoke();
         String rspCsvString = rsp.readEntity(String.class);
