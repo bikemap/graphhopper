@@ -25,7 +25,7 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
     @Override
     public EncodedValue create(String name, PMap properties) {
 
-        List<String> replicatedTags = BMWeight.replicatedTags();
+        List<String> replicatedTags = BmWeight.replicatedTags();
 
         if (Roundabout.KEY.equals(name)) {
             return Roundabout.create();
@@ -37,6 +37,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             return RoadClassLink.create();
         } else if (RoadEnvironment.KEY.equals(name)) {
             return RoadEnvironment.create();
+        } else if (BmWayType.KEY.equals(name)) {
+            return BmWayType.create();
         } else if (RoadAccess.KEY.equals(name)) {
             return RoadAccess.create();
         } else if (MaxSpeed.KEY.equals(name)) {
@@ -59,6 +61,8 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             return Hgv.create();
         } else if (Surface.KEY.equals(name)) {
             return Surface.create();
+        } else if (BmSurface.KEY.equals(name)) {
+            return BmSurface.create();
         } else if (Smoothness.KEY.equals(name)) {
             return Smoothness.create();
         } else if (Toll.KEY.equals(name)) {
@@ -101,8 +105,10 @@ public class DefaultEncodedValueFactory implements EncodedValueFactory {
             return new EnumEncodedValue<>(Crossing.KEY, Crossing.class);
         } else if (FerrySpeed.KEY.equals(name)) {
             return FerrySpeed.create();
+        } else if (BmIsPleasant.KEY.equals(name)) {
+            return BmIsPleasant.create();
         } else if (replicatedTags.contains(name)) {
-            return BMWeight.create(name);
+            return BmWeight.create(name);
         } else {
             throw new IllegalArgumentException("DefaultEncodedValueFactory cannot find EncodedValue " + name);
         }
