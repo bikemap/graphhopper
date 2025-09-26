@@ -326,7 +326,6 @@ public class GraphHopperWeb {
                 + "?"
                 + "profile=" + ghRequest.getProfile()
                 + places
-                + "&profile=" + ghRequest.getProfile()
                 + "&type=" + type
                 + "&instructions=" + tmpInstructions
                 + "&points_encoded=true"
