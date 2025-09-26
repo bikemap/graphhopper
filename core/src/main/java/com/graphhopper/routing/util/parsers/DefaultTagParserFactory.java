@@ -28,7 +28,7 @@ public class DefaultTagParserFactory implements TagParserFactory {
 
     @Override
     public TagParser create(EncodedValueLookup lookup, String name, PMap properties) {
-        List<String> replicatedTags = BMWeight.replicatedTags();
+        List<String> replicatedTags = BmWeight.replicatedTags();
 
         if (Roundabout.KEY.equals(name))
             return new OSMRoundaboutParser(lookup.getBooleanEncodedValue(Roundabout.KEY));
@@ -38,6 +38,8 @@ public class DefaultTagParserFactory implements TagParserFactory {
             return new OSMRoadClassLinkParser(lookup.getBooleanEncodedValue(RoadClassLink.KEY));
         else if (name.equals(RoadEnvironment.KEY))
             return new OSMRoadEnvironmentParser(lookup.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class));
+        else if (name.equals(BmWayType.KEY))
+            return new BMWayTypeParser(lookup.getEnumEncodedValue(BmWayType.KEY, BmWayType.class));
         else if (name.equals(RoadAccess.KEY))
             return new OSMRoadAccessParser(lookup.getEnumEncodedValue(RoadAccess.KEY, RoadAccess.class), OSMRoadAccessParser.toOSMRestrictions(TransportationMode.CAR));
         else if (name.equals(MaxSpeed.KEY))
@@ -56,6 +58,8 @@ public class DefaultTagParserFactory implements TagParserFactory {
             return new OSMMaxLengthParser(lookup.getDecimalEncodedValue(MaxLength.KEY));
         else if (name.equals(Surface.KEY))
             return new OSMSurfaceParser(lookup.getEnumEncodedValue(Surface.KEY, Surface.class));
+        else if (name.equals(BmSurface.KEY))
+            return new BMSurfaceParser(lookup.getEnumEncodedValue(BmSurface.KEY, BmSurface.class));
         else if (name.equals(Smoothness.KEY))
             return new OSMSmoothnessParser(lookup.getEnumEncodedValue(Smoothness.KEY, Smoothness.class));
         else if (name.equals(Toll.KEY))
@@ -90,6 +94,8 @@ public class DefaultTagParserFactory implements TagParserFactory {
             return new OSMCrossingParser(lookup.getEnumEncodedValue(Crossing.KEY, Crossing.class));
         else if (name.equals(FerrySpeed.KEY))
             return new FerrySpeedCalculator(lookup.getDecimalEncodedValue(FerrySpeed.KEY));
+        else if (name.equals(BmIsPleasant.KEY))
+            return new BMIsPleasantParser(lookup.getIntEncodedValue(BmIsPleasant.KEY));
         else if (replicatedTags.contains(name))
             return new BMWeightParser(lookup.getIntEncodedValue(name));
         return null;
