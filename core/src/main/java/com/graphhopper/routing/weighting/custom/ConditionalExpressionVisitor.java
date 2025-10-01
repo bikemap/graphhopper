@@ -105,6 +105,10 @@ class ConditionalExpressionVisitor implements Visitor.AtomVisitor<Boolean, Excep
                             return true;
                         }
                     }
+                } else if (n.identifiers.length == 1 && mi.arguments.length == 0 && variableValidator.isValid(n.identifiers[0])) {
+                    // track_type.ordinal()
+                    result.guessedVariables.add(n.identifiers[0]);
+                    return true;
                 }
             }
             invalidMessage = mi.methodName + " is an illegal method in a conditional expression";
