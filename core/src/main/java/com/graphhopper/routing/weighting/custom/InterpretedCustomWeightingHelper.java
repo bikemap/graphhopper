@@ -24,7 +24,6 @@ import org.codehaus.janino.TokenType;
 import org.locationtech.jts.geom.Polygonal;
 import org.locationtech.jts.geom.prep.PreparedPolygon;
 
-import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -42,11 +41,8 @@ import static com.graphhopper.routing.weighting.custom.CustomModelParser.IN_AREA
 
 final class InterpretedCustomWeightingHelper extends CustomWeightingHelper {
 
-    static CustomWeighting.Parameters createParameters(CustomModel customModel, EncodedValueLookup lookup,
-                                                        DecimalEncodedValue avgSpeedEnc, double globalMaxSpeed,
-                                                        DecimalEncodedValue priorityEnc) {
-        double globalMaxPriority = priorityEnc == null ? 1 : priorityEnc.getMaxStorableDecimal();
-
+    static CompiledModel compile(CustomModel customModel, EncodedValueLookup lookup,
+                                 double globalMaxSpeed, double globalMaxPriority) {
         validateValueExpressions(customModel.getPriority(), lookup);
         compileRuleBlocks(customModel.getPriority(), "priority entry", lookup, new LinkedHashSet<>());
 
@@ -75,22 +71,56 @@ final class InterpretedCustomWeightingHelper extends CustomWeightingHelper {
         allVariables.addAll(priorityVariables);
         allVariables.addAll(speedVariables);
 
-        Map<String, JsonFeature> areaFeatures = CustomModel.getAreasAsMap(customModel.getAreas());
-        BuildResult buildResult = buildVariableAccessors(allVariables, lookup, areaFeatures);
-        InterpretedCustomWeightingHelper helper = new InterpretedCustomWeightingHelper(
-                speedBlocks,
-                priorityBlocks,
-                buildResult.variableAccessors,
-                buildResult.enumLookups,
-                buildResult.areaPolygons,
-                minMaxSpeed.max,
-                minMaxPriority.max
-        );
-        helper.init(lookup, avgSpeedEnc, priorityEnc, areaFeatures);
+        double distanceInfluence = customModel.getDistanceInfluence() == null ? 0 : customModel.getDistanceInfluence();
+        double headingPenalty = customModel.getHeadingPenalty() == null ? Parameters.Routing.DEFAULT_HEADING_PENALTY : customModel.getHeadingPenalty();
 
-        return new CustomWeighting.Parameters(helper::getSpeed, helper::getPriority, helper.getMaxSpeed(), helper.getMaxPriority(),
-                customModel.getDistanceInfluence() == null ? 0 : customModel.getDistanceInfluence(),
-                customModel.getHeadingPenalty() == null ? Parameters.Routing.DEFAULT_HEADING_PENALTY : customModel.getHeadingPenalty());
+        return new CompiledModel(speedBlocks, priorityBlocks, allVariables, minMaxSpeed.max, minMaxPriority.max,
+                distanceInfluence, headingPenalty);
+    }
+
+    static final class CompiledModel {
+        private final List<RuleBlock> speedBlocks;
+        private final List<RuleBlock> priorityBlocks;
+        private final Set<String> variables;
+        private final double maxSpeed;
+        private final double maxPriority;
+        private final double distanceInfluence;
+        private final double headingPenalty;
+
+        CompiledModel(List<RuleBlock> speedBlocks,
+                      List<RuleBlock> priorityBlocks,
+                      Set<String> variables,
+                      double maxSpeed,
+                      double maxPriority,
+                      double distanceInfluence,
+                      double headingPenalty) {
+            this.speedBlocks = Collections.unmodifiableList(new ArrayList<>(speedBlocks));
+            this.priorityBlocks = Collections.unmodifiableList(new ArrayList<>(priorityBlocks));
+            this.variables = Collections.unmodifiableSet(new LinkedHashSet<>(variables));
+            this.maxSpeed = maxSpeed;
+            this.maxPriority = maxPriority;
+            this.distanceInfluence = distanceInfluence;
+            this.headingPenalty = headingPenalty;
+        }
+
+        CustomWeighting.Parameters createParameters(EncodedValueLookup lookup,
+                                                    DecimalEncodedValue avgSpeedEnc,
+                                                    DecimalEncodedValue priorityEnc,
+                                                    Map<String, JsonFeature> areas) {
+            BuildResult buildResult = buildVariableAccessors(variables, lookup, areas);
+            InterpretedCustomWeightingHelper helper = new InterpretedCustomWeightingHelper(
+                    speedBlocks,
+                    priorityBlocks,
+                    buildResult.variableAccessors,
+                    buildResult.enumLookups,
+                    buildResult.areaPolygons,
+                    maxSpeed,
+                    maxPriority
+            );
+            helper.init(lookup, avgSpeedEnc, priorityEnc, areas);
+            return new CustomWeighting.Parameters(helper::getSpeed, helper::getPriority, helper.getMaxSpeed(), helper.getMaxPriority(),
+                    distanceInfluence, headingPenalty);
+        }
     }
 
     private final List<RuleBlock> speedBlocks;

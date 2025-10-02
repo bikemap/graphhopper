@@ -18,13 +18,22 @@
 package com.graphhopper.routing.weighting.custom;
 
 import com.graphhopper.json.Statement;
-import com.graphhopper.routing.ev.*;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.EncodedValueLookup;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.weighting.TurnCostProvider;
-import com.graphhopper.util.*;
+import com.graphhopper.util.CustomModel;
+import com.graphhopper.util.Helper;
+import com.graphhopper.util.JsonFeature;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.List;
+import java.util.Set;
 
 public class CustomModelParser {
     static final String IN_AREA_PREFIX = "in_";
@@ -34,8 +43,8 @@ public class CustomModelParser {
     // CH requests and preparation is unaffected as cached weighting from preparation is used.
     // Use accessOrder==true to remove oldest accessed entry, not oldest inserted.
     private static final int CACHE_SIZE = Integer.getInteger("graphhopper.custom_weighting.cache_size", 1000);
-    private static final Map<String, CustomWeighting.Parameters> CACHE = Collections.synchronizedMap(
-            new LinkedHashMap<String, CustomWeighting.Parameters>(CACHE_SIZE, 0.75f, true) {
+    private static final Map<String, InterpretedCustomWeightingHelper.CompiledModel> CACHE = Collections.synchronizedMap(
+            new LinkedHashMap<String, InterpretedCustomWeightingHelper.CompiledModel>(CACHE_SIZE, 0.75f, true) {
                 protected boolean removeEldestEntry(Map.Entry eldest) {
                     return size() > CACHE_SIZE;
                 }
@@ -45,7 +54,7 @@ public class CustomModelParser {
     // of how frequent other Weightings are created and accessed. We only need to synchronize the get and put methods alone.
     // E.g. we do not care for the race condition where two identical classes are requested and one of them is overwritten.
     // TODO perf compare with ConcurrentHashMap, but I guess, if there is a difference at all, it is not big for small maps
-    private static final Map<String, CustomWeighting.Parameters> INTERNAL_CACHE = Collections.synchronizedMap(new HashMap<>());
+    private static final Map<String, InterpretedCustomWeightingHelper.CompiledModel> INTERNAL_CACHE = Collections.synchronizedMap(new HashMap<>());
 
     private CustomModelParser() {
         // utility class
@@ -86,22 +95,27 @@ public class CustomModelParser {
         try {
             InterpretedCustomWeightingHelper.validateModel(customModel, lookup);
 
-            CustomWeighting.Parameters parameters = customModel.isInternal() ? INTERNAL_CACHE.get(key) : null;
-            if (parameters == null) {
-                parameters = InterpretedCustomWeightingHelper.createParameters(customModel, lookup, avgSpeedEnc, globalMaxSpeed, priorityEnc);
+            InterpretedCustomWeightingHelper.CompiledModel compiled = customModel.isInternal() ? INTERNAL_CACHE.get(key) : null;
+            if (compiled == null && CACHE_SIZE > 0)
+                compiled = CACHE.get(key);
+            if (compiled == null) {
+                compiled = InterpretedCustomWeightingHelper.compile(customModel, lookup, globalMaxSpeed, globalMaxPriority);
 
                 if (customModel.isInternal()) {
-                    INTERNAL_CACHE.put(key, parameters);
+                    INTERNAL_CACHE.put(key, compiled);
                     if (INTERNAL_CACHE.size() > 100) {
                         CACHE.putAll(INTERNAL_CACHE);
                         INTERNAL_CACHE.clear();
                         LoggerFactory.getLogger(CustomModelParser.class).warn("Internal cache must stay small but was "
                                 + INTERNAL_CACHE.size() + ". Cleared it. Misuse of CustomModel::internal?");
                     }
+                } else if (CACHE_SIZE > 0) {
+                    CACHE.put(key, compiled);
                 }
             }
 
-            return parameters;
+            Map<String, JsonFeature> areaFeatures = CustomModel.getAreasAsMap(customModel.getAreas());
+            return compiled.createParameters(lookup, avgSpeedEnc, priorityEnc, areaFeatures);
         } catch (IllegalArgumentException ex) {
             CACHE.remove(key);
             INTERNAL_CACHE.remove(key);
