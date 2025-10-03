@@ -22,8 +22,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.graphhopper.GraphHopper;
 import com.graphhopper.util.AndroidSourceVersion;
 
-import javax.lang.model.SourceVersion;
-
 /**
  * Implementation of the IntEncodedValue via a certain number of bits (that determines the maximum value) and
  * a minimum value (default is 0).
@@ -235,12 +233,9 @@ public class IntEncodedValueImpl implements IntEncodedValue {
     }
 
     static boolean isValidEncodedValue(String name) {
-        boolean isKeyword;
-        if (GraphHopper.isAndroid()) {
-            isKeyword = AndroidSourceVersion.isKeyword(name);
-        } else {
-            isKeyword = SourceVersion.isKeyword(name);
-        }
+        // For iOS we can't use javax.lang.model.SourceVersion as well, and need
+        // to provide the same dummy response which is already implemented for Android.
+        boolean isKeyword = AndroidSourceVersion.isKeyword(name);
 
         if (name.length() < 2 || name.startsWith("in_") || name.startsWith("backward_")
                 || !isLowerLetter(name.charAt(0)) || isKeyword)
