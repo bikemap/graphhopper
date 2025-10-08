@@ -23,7 +23,7 @@ import com.graphhopper.config.CHProfile;
 import com.graphhopper.config.LMProfile;
 import com.graphhopper.config.Profile;
 import com.graphhopper.jackson.Jackson;
-import com.graphhopper.reader.dem.*;
+import com.graphhopper.reader.dem.ElevationProvider;
 import com.graphhopper.reader.osm.OSMReader;
 import com.graphhopper.reader.osm.RestrictionTagParser;
 import com.graphhopper.reader.osm.conditional.DateRangeParser;
@@ -762,56 +762,7 @@ public class GraphHopper {
     }
 
     private static ElevationProvider createElevationProvider(GraphHopperConfig ghConfig) {
-        String eleProviderStr = toLowerCase(ghConfig.getString("graph.elevation.provider", "noop"));
-
-        if (ghConfig.has("graph.elevation.calcmean"))
-            throw new IllegalArgumentException("graph.elevation.calcmean is deprecated, use graph.elevation.interpolate");
-
-        String cacheDirStr = ghConfig.getString("graph.elevation.cache_dir", "");
-        if (cacheDirStr.isEmpty() && ghConfig.has("graph.elevation.cachedir"))
-            throw new IllegalArgumentException("use graph.elevation.cache_dir not cachedir in configuration");
-
-        ElevationProvider elevationProvider = ElevationProvider.NOOP;
-        if (eleProviderStr.equalsIgnoreCase("hgt")) {
-            elevationProvider = new HGTProvider(cacheDirStr);
-        } else if (eleProviderStr.equalsIgnoreCase("srtm")) {
-            elevationProvider = new SRTMProvider(cacheDirStr);
-        } else if (eleProviderStr.equalsIgnoreCase("cgiar")) {
-            elevationProvider = new CGIARProvider(cacheDirStr);
-        } else if (eleProviderStr.equalsIgnoreCase("gmted")) {
-            elevationProvider = new GMTEDProvider(cacheDirStr);
-        } else if (eleProviderStr.equalsIgnoreCase("srtmgl1")) {
-            elevationProvider = new SRTMGL1Provider(cacheDirStr);
-        } else if (eleProviderStr.equalsIgnoreCase("multi")) {
-            elevationProvider = new MultiSourceElevationProvider(cacheDirStr);
-        } else if (eleProviderStr.equalsIgnoreCase("skadi")) {
-            elevationProvider = new SkadiProvider(cacheDirStr);
-        }
-
-        if (elevationProvider instanceof TileBasedElevationProvider) {
-            TileBasedElevationProvider provider = (TileBasedElevationProvider) elevationProvider;
-
-            String baseURL = ghConfig.getString("graph.elevation.base_url", "");
-            if (baseURL.isEmpty() && ghConfig.has("graph.elevation.baseurl"))
-                throw new IllegalArgumentException("use graph.elevation.base_url not baseurl in configuration");
-
-            DAType elevationDAType = DAType.fromString(ghConfig.getString("graph.elevation.dataaccess", "MMAP"));
-
-            boolean interpolate = ghConfig.has("graph.elevation.interpolate")
-                    ? "bilinear".equals(ghConfig.getString("graph.elevation.interpolate", "none"))
-                    : ghConfig.getBool("graph.elevation.calc_mean", false);
-
-            boolean removeTempElevationFiles = ghConfig.getBool("graph.elevation.cgiar.clear", true);
-            removeTempElevationFiles = ghConfig.getBool("graph.elevation.clear", removeTempElevationFiles);
-
-            provider
-                    .setAutoRemoveTemporaryFiles(removeTempElevationFiles)
-                    .setInterpolate(interpolate)
-                    .setDAType(elevationDAType);
-            if (!baseURL.isEmpty())
-                provider.setBaseURL(baseURL);
-        }
-        return elevationProvider;
+        return ElevationProvider.NOOP;
     }
 
     private void printInfo() {
@@ -1241,20 +1192,8 @@ public class GraphHopper {
     }
 
     void interpolateBridgesTunnelsAndFerries() {
-        if (encodingManager.hasEncodedValue(RoadEnvironment.KEY)) {
-            EnumEncodedValue<RoadEnvironment> roadEnvEnc = encodingManager.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class);
-            StopWatch sw = new StopWatch().start();
-            new EdgeElevationInterpolator(baseGraph.getBaseGraph(), roadEnvEnc, RoadEnvironment.TUNNEL).execute();
-            float tunnel = sw.stop().getSeconds();
-            sw = new StopWatch().start();
-            new EdgeElevationInterpolator(baseGraph.getBaseGraph(), roadEnvEnc, RoadEnvironment.BRIDGE).execute();
-            float bridge = sw.stop().getSeconds();
-            // The SkadiProvider contains bathymetric data. For ferries this can result in bigger elevation changes
-            // See #2098 for mor information
-            sw = new StopWatch().start();
-            new EdgeElevationInterpolator(baseGraph.getBaseGraph(), roadEnvEnc, RoadEnvironment.FERRY).execute();
-            logger.info("Bridge interpolation " + (int) bridge + "s, " + "tunnel interpolation " + (int) tunnel + "s, ferry interpolation " + (int) sw.stop().getSeconds() + "s");
-        }
+        // Elevation smoothing is not supported in the iOS build where elevation data is provided
+        // externally together with the prepared graph.
     }
 
     public final Weighting createWeighting(Profile profile, PMap hints) {
