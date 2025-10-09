@@ -23,6 +23,7 @@ import com.graphhopper.config.CHProfile;
 import com.graphhopper.config.LMProfile;
 import com.graphhopper.config.Profile;
 import com.graphhopper.jackson.Jackson;
+import com.graphhopper.reader.dem.EdgeElevationInterpolator;
 import com.graphhopper.reader.dem.ElevationProvider;
 import com.graphhopper.reader.osm.OSMReader;
 import com.graphhopper.reader.osm.RestrictionTagParser;
@@ -95,6 +96,7 @@ public class GraphHopper {
     private final LinkedHashMap<String, String> dataAccessConfig = new LinkedHashMap<>();
     private boolean sortGraph = false;
     private boolean elevation = false;
+    private boolean elevationEdgeInterpolationEnabled = true;
     private LockFactory lockFactory = new NativeFSLockFactory();
     private boolean allowWrites = true;
     private boolean fullyLoaded = false;
@@ -183,6 +185,16 @@ public class GraphHopper {
             setElevation(true);
         this.eleProvider = eleProvider;
         return this;
+    }
+
+    public GraphHopper setElevationEdgeInterpolationEnabled(boolean enabled) {
+        ensureNotLoaded();
+        this.elevationEdgeInterpolationEnabled = enabled;
+        return this;
+    }
+
+    public boolean isElevationEdgeInterpolationEnabled() {
+        return elevationEdgeInterpolationEnabled;
     }
 
     public GraphHopper setPathDetailsBuilderFactory(PathDetailsBuilderFactory pathBuilderFactory) {
@@ -577,6 +589,7 @@ public class GraphHopper {
         osmReaderConfig.setElevationSmoothingRamerMax(ghConfig.getInt("graph.elevation.edge_smoothing.ramer.max_elevation", osmReaderConfig.getElevationSmoothingRamerMax()));
         osmReaderConfig.setLongEdgeSamplingDistance(ghConfig.getDouble("graph.elevation.long_edge_sampling_distance", osmReaderConfig.getLongEdgeSamplingDistance()));
         osmReaderConfig.setElevationMaxWayPointDistance(ghConfig.getDouble("graph.elevation.way_point_max_distance", osmReaderConfig.getElevationMaxWayPointDistance()));
+        elevationEdgeInterpolationEnabled = ghConfig.getBool("graph.elevation.edge_interpolation", elevationEdgeInterpolationEnabled);
         routerConfig.setElevationWayPointMaxDistance(ghConfig.getDouble("graph.elevation.way_point_max_distance", routerConfig.getElevationWayPointMaxDistance()));
         ElevationProvider elevationProvider = createElevationProvider(ghConfig);
         setElevationProvider(elevationProvider);
@@ -1192,8 +1205,25 @@ public class GraphHopper {
     }
 
     void interpolateBridgesTunnelsAndFerries() {
-        // Elevation smoothing is not supported in the iOS build where elevation data is provided
-        // externally together with the prepared graph.
+        // Use configuration to skip this step when elevations are already preprocessed (e.g. iOS build pipeline).
+        if (!elevationEdgeInterpolationEnabled)
+            return;
+
+        if (encodingManager.hasEncodedValue(RoadEnvironment.KEY)) {
+            EnumEncodedValue<RoadEnvironment> roadEnvEnc = encodingManager.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class);
+            StopWatch sw = new StopWatch().start();
+            new EdgeElevationInterpolator(baseGraph.getBaseGraph(), roadEnvEnc, RoadEnvironment.TUNNEL).execute();
+            float tunnel = sw.stop().getSeconds();
+            sw = new StopWatch().start();
+            new EdgeElevationInterpolator(baseGraph.getBaseGraph(), roadEnvEnc, RoadEnvironment.BRIDGE).execute();
+            float bridge = sw.stop().getSeconds();
+            // The SkadiProvider contains bathymetric data. For ferries this can result in bigger elevation changes
+            // See #2098 for more information
+            sw = new StopWatch().start();
+            new EdgeElevationInterpolator(baseGraph.getBaseGraph(), roadEnvEnc, RoadEnvironment.FERRY).execute();
+            logger.info("Bridge interpolation {}s, tunnel interpolation {}s, ferry interpolation {}s",
+                    (int) bridge, (int) tunnel, (int) sw.stop().getSeconds());
+        }
     }
 
     public final Weighting createWeighting(Profile profile, PMap hints) {
