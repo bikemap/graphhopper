@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git rm:*)",
+      "Bash(awk:*)",
+      "Bash(xargs git add)",
+      "Bash(xargs git checkout:*)",
+      "Bash(xargs git rm:*)",
+      "Bash(git diff:*)",
+      "Bash(mvn clean:*)",
+      "Bash(rm:*)",
+      "Bash(javac:*)",
+      "Bash(mvn compile:*)",
+      "Bash(java:*)",
+      "Bash(mvn test:*)",
+      "WebSearch",
+      "Bash(echo:*)",
+      "Bash(echo $PATH)",
+      "Bash(mvn:*)",
+      "Read(//Users/oleksii/.m2/**)",
+      "Read(//Library/Java/JavaVirtualMachines/**)",
+      "Read(//Users/oleksii/**)",
+      "Bash(timeout 60 mvn test:*)",
+      "Read(//tmp/**)",
+      "Bash(tee:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
