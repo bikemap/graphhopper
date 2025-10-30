@@ -22,9 +22,13 @@ import com.graphhopper.routing.util.*;
 import com.graphhopper.routing.util.parsers.*;
 import com.graphhopper.util.PMap;
 
+import java.util.List;
+
 public class DefaultImportRegistry implements ImportRegistry {
     @Override
     public ImportUnit createImportUnit(String name) {
+        List<String> replicatedTags = BmWeight.replicatedTags();
+
         if (Roundabout.KEY.equals(name))
             return ImportUnit.create(name, props -> Roundabout.create(),
                     (lookup, props) -> new OSMRoundaboutParser(
@@ -50,6 +54,11 @@ public class DefaultImportRegistry implements ImportRegistry {
             return ImportUnit.create(name, props -> RoadEnvironment.create(),
                     (lookup, props) -> new OSMRoadEnvironmentParser(
                             lookup.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class))
+            );
+        else if (name.equals(BmWayType.KEY))
+            return ImportUnit.create(name, props -> BmWayType.create(),
+                    (lookup, props) -> new BMWayTypeParser(
+                            lookup.getEnumEncodedValue(BmWayType.KEY, BmWayType.class))
             );
         else if (FootRoadAccess.KEY.equals(name))
             return ImportUnit.create(name, props -> FootRoadAccess.create(),
@@ -124,6 +133,11 @@ public class DefaultImportRegistry implements ImportRegistry {
             return ImportUnit.create(name, props -> Surface.create(),
                     (lookup, props) -> new OSMSurfaceParser(
                             lookup.getEnumEncodedValue(Surface.KEY, Surface.class))
+            );
+        else if (name.equals(BmSurface.KEY))
+            return ImportUnit.create(name, props -> BmSurface.create(),
+                    (lookup, props) -> new BMSurfaceParser(
+                            lookup.getEnumEncodedValue(BmSurface.KEY, BmSurface.class))
             );
         else if (Smoothness.KEY.equals(name))
             return ImportUnit.create(name, props -> Smoothness.create(),
@@ -209,6 +223,11 @@ public class DefaultImportRegistry implements ImportRegistry {
             return ImportUnit.create(name, props -> FerrySpeed.create(),
                     (lookup, props) -> new FerrySpeedCalculator(
                             lookup.getDecimalEncodedValue(FerrySpeed.KEY)));
+        else if (name.equals(BmIsPleasant.KEY))
+            return ImportUnit.create(name, props -> BmIsPleasant.create(),
+                    (lookup, props) -> new BMIsPleasantParser(
+                            lookup.getIntEncodedValue(BmIsPleasant.KEY))
+            );
         else if (Curvature.KEY.equals(name))
             return ImportUnit.create(name, props -> Curvature.create(),
                     (lookup, props) -> new CurvatureCalculator(
@@ -347,6 +366,12 @@ public class DefaultImportRegistry implements ImportRegistry {
                     (lookup, props) -> new MountainBikePriorityParser(lookup),
                     VehicleSpeed.key("mtb"), BikeNetwork.KEY
             );
+
+        else if (replicatedTags.contains(name))
+            return ImportUnit.create(name, props -> BmWeight.create(name),
+                    (lookup, props) -> new BMWeightParser(lookup.getIntEncodedValue(name))
+            );
+
         return null;
     }
 }

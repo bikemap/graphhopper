@@ -28,8 +28,6 @@ public abstract class BikeCommonAccessParser extends AbstractAccessParser implem
 
         this.roundaboutEnc = roundaboutEnc;
 
-        restrictedValues.add("agricultural");
-        restrictedValues.add("forestry");
         restrictedValues.add("delivery");
 
         barriers.add("fence");
