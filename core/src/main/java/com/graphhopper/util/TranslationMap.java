@@ -17,6 +17,8 @@
  */
 package com.graphhopper.util;
 
+import com.graphhopper.GraphHopper;
+
 import java.io.*;
 import java.util.*;
 import java.util.Map.Entry;
@@ -53,7 +55,10 @@ public class TranslationMap {
         try {
             for (String locale : LOCALES) {
                 TranslationHashMap trMap = new TranslationHashMap(getLocale(locale));
-                trMap.doImport(new FileInputStream(new File(folder, "/" + locale + ".txt")));
+                InputStream translationStream = openTranslationStream(locale, folder);
+                if (translationStream == null)
+                    throw new IllegalStateException("No input stream found for locale " + locale + " in folder " + folder);
+                trMap.doImport(translationStream);
                 add(trMap);
             }
             postImportHook();
@@ -70,7 +75,10 @@ public class TranslationMap {
         try {
             for (String locale : LOCALES) {
                 TranslationHashMap trMap = new TranslationHashMap(getLocale(locale));
-                trMap.doImport(TranslationMap.class.getResourceAsStream("/" + locale + ".txt"));
+                InputStream translationStream = openTranslationStream(locale, null);
+                if (translationStream == null)
+                    throw new IllegalStateException("No input stream found in class path for locale " + locale);
+                trMap.doImport(translationStream);
                 add(trMap);
             }
             postImportHook();
@@ -245,5 +253,19 @@ public class TranslationMap {
             }
             return this;
         }
+    }
+
+    private static InputStream openTranslationStream(String locale, File folder) {
+        if (folder != null) {
+            try {
+                return new FileInputStream(new File(folder, locale + ".txt"));
+            } catch (FileNotFoundException ignored) {
+                // ignore and try classpath fallbacks below
+            }
+        }
+        InputStream stream = TranslationMap.class.getResourceAsStream(locale + ".txt");
+        if (stream == null)
+            stream = TranslationMap.class.getResourceAsStream("/" + locale + ".txt");
+        return stream;
     }
 }
