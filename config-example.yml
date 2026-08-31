@@ -100,10 +100,12 @@ graphhopper:
 
   #### Elevation ####
 
-  # To populate your graph with elevation data use SRTM, default is noop (no elevation). Read more about it in docs/core/elevation.md
+  # To populate your graph with elevation data use SRTM or Bikemap, default is noop (no elevation).
+  # Read more about it in docs/core/elevation.md
   # graph.elevation.provider: srtm
 
   # default location for cache is /tmp/srtm
+  # For the bikemap provider this must be the writable continuous COG dataset directory.
   # graph.elevation.cache_dir: ./srtmprovider/
 
   # If you have a slow disk or plenty of RAM change the default MMAP to:
