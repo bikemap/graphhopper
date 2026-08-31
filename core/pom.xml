@@ -82,6 +82,12 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <!-- Reads the tiled Float32 COGs used by Bikemap's elevation dataset, including TIFF Predictor 3. -->
+        <dependency>
+            <groupId>com.twelvemonkeys.imageio</groupId>
+            <artifactId>imageio-tiff</artifactId>
+            <version>3.14.0</version>
+        </dependency>
         <dependency>
             <groupId>org.openstreetmap.osmosis</groupId>
             <artifactId>osmosis-osm-binary</artifactId>

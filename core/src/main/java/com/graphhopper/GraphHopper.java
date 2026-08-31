@@ -685,6 +685,8 @@ public class GraphHopper {
             elevationProvider = new SRTMProvider(cacheDirStr);
         } else if (eleProviderStr.equalsIgnoreCase("cgiar")) {
             elevationProvider = new CGIARProvider(cacheDirStr);
+        } else if (eleProviderStr.equalsIgnoreCase("bikemap")) {
+            elevationProvider = new BikemapElevationProvider(cacheDirStr);
         } else if (eleProviderStr.equalsIgnoreCase("gmted")) {
             elevationProvider = new GMTEDProvider(cacheDirStr);
         } else if (eleProviderStr.equalsIgnoreCase("srtmgl1")) {
