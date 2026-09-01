@@ -19,9 +19,11 @@ package com.graphhopper.reader.dem;
 
 import com.graphhopper.storage.DataAccess;
 import com.graphhopper.util.Downloader;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 import javax.imageio.ImageIO;
@@ -309,7 +311,7 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
                     .range("bytes=0-" + (DOWNLOAD_CHUNK_BYTES - 1)).build();
             long length;
             String etag;
-            try (var input = s3Client.getObject(request)) {
+            try (ResponseInputStream<GetObjectResponse> input = s3Client.getObject(request)) {
                 String contentRange = input.response().contentRange();
                 length = contentRange == null ? -1 : Long.parseLong(contentRange.substring(contentRange.lastIndexOf('/') + 1));
                 if (contentRange != null && (length <= 0 || !contentRange.equals("bytes 0-"
@@ -338,7 +340,7 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
                             long end = Math.min(length - 1, start + DOWNLOAD_CHUNK_BYTES - 1);
                             GetObjectRequest rangeRequest = request.toBuilder()
                                     .range("bytes=" + start + "-" + end).ifMatch(etag).build();
-                            try (var input = s3Client.getObject(rangeRequest)) {
+                            try (ResponseInputStream<GetObjectResponse> input = s3Client.getObject(rangeRequest)) {
                                 if (!("bytes " + start + "-" + end + "/" + length).equals(input.response().contentRange()))
                                     throw new IOException("Invalid elevation COG Content-Range: " + fileName);
                                 long position = start;
@@ -587,7 +589,11 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
 
     private String pad(int value, int width) {
         String result = Integer.toString(value);
-        return "0".repeat(width - result.length()) + result;
+        StringBuilder padded = new StringBuilder(width);
+        for (int i = result.length(); i < width; i++) {
+            padded.append('0');
+        }
+        return padded.append(result).toString();
     }
 
     @Override
