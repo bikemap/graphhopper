@@ -264,7 +264,11 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
 
     private String pad(int value, int width) {
         String result = Integer.toString(value);
-        return "0".repeat(width - result.length()) + result;
+        StringBuilder padded = new StringBuilder(width);
+        for (int i = result.length(); i < width; i++) {
+            padded.append('0');
+        }
+        return padded.append(result).toString();
     }
 
     @Override
