@@ -83,13 +83,13 @@ class BikemapParallelElevationProviderTest {
         DAType type = storageType.equals("RAM_INT_STORE") ? DAType.RAM_INT_STORE : DAType.fromString(storageType);
         TrackingProvider sequential = createProvider("sequential", type, 1);
         sequential.getEle(46.9999, 10);
-        assertEquals(type, sequential.getDirectory().getDAs().get(CACHE_NAME).getType());
+        assertEquals(type, sequential.getCreatedDataAccess(CACHE_NAME).getType());
         assertEquals(1, sequential.maximumActive.get());
 
         TrackingProvider parallel = createProvider("parallel", type, 2);
         parallel.firstWorkersEntered = new CountDownLatch(2);
         parallel.getEle(46.9999, 10);
-        assertEquals(type, parallel.getDirectory().getDAs().get(CACHE_NAME).getType());
+        assertEquals(type, parallel.getCreatedDataAccess(CACHE_NAME).getType());
 
         // The latch forces two decoders to be active together, independently of machine speed.
         assertEquals(2, parallel.maximumActive.get());
@@ -197,7 +197,7 @@ class BikemapParallelElevationProviderTest {
     }
 
     private static short[] readSamples(TrackingProvider provider) {
-        DataAccess heights = provider.getDirectory().getDAs().get(CACHE_NAME);
+        DataAccess heights = provider.getCreatedDataAccess(CACHE_NAME);
         assertEquals(SIZE, heights.getHeader(8));
         assertEquals(SIZE, heights.getHeader(12));
         short[] samples = new short[SIZE * SIZE];
@@ -282,7 +282,7 @@ class BikemapParallelElevationProviderTest {
         }
     }
 
-    private static class TrackingProvider extends BikemapElevationProvider {
+    private static class TrackingProvider extends TestBikemapElevationProvider {
         private final AtomicInteger active = new AtomicInteger();
         private final AtomicInteger maximumActive = new AtomicInteger();
         private final Set<ImageReader> readers = ConcurrentHashMap.newKeySet();

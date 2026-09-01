@@ -45,7 +45,10 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -54,6 +57,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -112,9 +116,9 @@ class BikemapRemoteElevationProviderTest {
         assertEquals(100, provider.getEle(46.9999, 10));
         assertTrue(Double.isNaN(provider.getEle(46.5, 10.5)));
         assertEquals(900, provider.getEle(46, 10.9999));
-        assertEquals(List.of("/elevation-test/2026-09/continuous/n46e010.tif"), requestPaths);
+        assertEquals(Arrays.asList("/elevation-test/2026-09/continuous/n46e010.tif"), requestPaths);
         assertTrue(authorization.startsWith("AWS4-HMAC-SHA256 "));
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
         provider.release();
         server.stop(0);
         server = null;
@@ -123,7 +127,7 @@ class BikemapRemoteElevationProviderTest {
         provider.forbidClientCreation = true;
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(0, provider.clientsCreated);
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @Test
@@ -133,9 +137,9 @@ class BikemapRemoteElevationProviderTest {
 
         provider = createProvider("s3://elevation-test/2026-10/continuous/");
         assertEquals(100, provider.getEle(46.9999, 10));
-        assertEquals(List.of("/elevation-test/2026-09/continuous/n46e010.tif",
+        assertEquals(Arrays.asList("/elevation-test/2026-09/continuous/n46e010.tif",
                 "/elevation-test/2026-10/continuous/n46e010.tif"), requestPaths);
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @Test
@@ -145,13 +149,13 @@ class BikemapRemoteElevationProviderTest {
         setSuccess(COG);
         assertEquals(0, provider.getEle(46.9999, 10));
         assertEquals(1, requestPaths.size());
-        assertDirectoryContains(Set.of());
+        assertDirectoryContains(Collections.emptySet());
         provider.release();
 
         provider = createProvider(S3_SOURCE);
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(2, requestPaths.size());
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @ParameterizedTest
@@ -160,24 +164,24 @@ class BikemapRemoteElevationProviderTest {
         setError(status, errorCode);
         assertThrows(RuntimeException.class, () -> provider.getEle(46.9999, 10));
         assertEquals(1, requestPaths.size());
-        assertDirectoryContains(Set.of());
+        assertDirectoryContains(Collections.emptySet());
 
         setSuccess(COG);
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(2, requestPaths.size());
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @Test
     void invalidRemoteTiffIsRemovedAndCanBeRetried() throws IOException {
         setSuccess(new byte[]{1, 2, 3});
         assertThrows(RuntimeException.class, () -> provider.getEle(46.9999, 10));
-        assertDirectoryContains(Set.of());
+        assertDirectoryContains(Collections.emptySet());
 
         setSuccess(COG);
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(2, requestPaths.size());
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @Test
@@ -185,7 +189,7 @@ class BikemapRemoteElevationProviderTest {
         Files.write(directory.resolve(CACHE_NAME), new byte[]{0, 2, 'G', 'H'});
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(1, requestPaths.size());
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @Test
@@ -199,7 +203,7 @@ class BikemapRemoteElevationProviderTest {
         provider = createProvider(S3_SOURCE);
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(2, requestPaths.size());
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @Test
@@ -216,16 +220,16 @@ class BikemapRemoteElevationProviderTest {
         assertEquals(4, rangeRequests.size());
         assertEquals(new RangeRequest(range(0, BikemapElevationProvider.DOWNLOAD_CHUNK_BYTES - 1), null),
                 rangeRequests.get(0));
-        assertEquals(expectedRemainingRanges(largeCog.length), Set.copyOf(rangeRequests.subList(1, rangeRequests.size())));
+        assertEquals(expectedRemainingRanges(largeCog.length), new HashSet<>(rangeRequests.subList(1, rangeRequests.size())));
         assertEquals(1, provider.clientsCreated);
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
         provider.release();
 
         provider = createProvider(S3_SOURCE);
         provider.forbidClientCreation = true;
         assertEquals(900, provider.getEle(46, 10.9999));
         assertEquals(4, rangeRequests.size());
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @Test
@@ -237,12 +241,12 @@ class BikemapRemoteElevationProviderTest {
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(900, provider.getEle(46, 10.9999));
         int chunkBytes = BikemapElevationProvider.DOWNLOAD_CHUNK_BYTES;
-        assertEquals(List.of(
+        assertEquals(Arrays.asList(
                 new RangeRequest(range(0, chunkBytes - 1), null),
                 new RangeRequest(range(chunkBytes, 2L * chunkBytes - 1), ETAG),
                 new RangeRequest(range(2L * chunkBytes, 3L * chunkBytes - 1), ETAG),
                 new RangeRequest(range(3L * chunkBytes, largeCog.length - 1), ETAG)), rangeRequests);
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @Test
@@ -252,9 +256,9 @@ class BikemapRemoteElevationProviderTest {
 
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(900, provider.getEle(46, 10.9999));
-        assertEquals(List.of(new RangeRequest(range(0, BikemapElevationProvider.DOWNLOAD_CHUNK_BYTES - 1), null)),
+        assertEquals(Arrays.asList(new RangeRequest(range(0, BikemapElevationProvider.DOWNLOAD_CHUNK_BYTES - 1), null)),
                 rangeRequests);
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @ParameterizedTest
@@ -265,13 +269,13 @@ class BikemapRemoteElevationProviderTest {
         provider.setThreads(3);
 
         assertThrows(RuntimeException.class, () -> provider.getEle(46.9999, 10));
-        assertDirectoryContains(Set.of());
+        assertDirectoryContains(Collections.emptySet());
 
         rangeFailure = RangeFailure.NONE;
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(900, provider.getEle(46, 10.9999));
         assertEquals(1, provider.clientsCreated);
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
     }
 
     @Test
@@ -279,9 +283,9 @@ class BikemapRemoteElevationProviderTest {
         provider.release();
         provider = createProvider(endpoint + "/2026-09/continuous/");
         assertEquals(100, provider.getEle(46.9999, 10));
-        assertEquals(List.of("/2026-09/continuous/n46e010.tif"), requestPaths);
+        assertEquals(Arrays.asList("/2026-09/continuous/n46e010.tif"), requestPaths);
         assertEquals(0, provider.clientsCreated);
-        assertDirectoryContains(Set.of(CACHE_NAME));
+        assertDirectoryContains(Collections.singleton(CACHE_NAME));
         provider.release();
 
         provider = createProvider(endpoint + "/2026-09/continuous/");
@@ -298,13 +302,13 @@ class BikemapRemoteElevationProviderTest {
         assertEquals(0, provider.getEle(46.9999, 10));
         assertEquals(0, provider.getEle(46.9999, 10));
         assertEquals(1, requestPaths.size());
-        assertDirectoryContains(Set.of());
+        assertDirectoryContains(Collections.emptySet());
         provider.release();
 
         provider = createProvider(endpoint + "/continuous");
         setError(403, "Forbidden");
         assertThrows(RuntimeException.class, () -> provider.getEle(46.9999, 10));
-        assertDirectoryContains(Set.of());
+        assertDirectoryContains(Collections.emptySet());
         setSuccess(COG);
         assertEquals(100, provider.getEle(46.9999, 10));
         assertEquals(3, requestPaths.size());
@@ -415,10 +419,10 @@ class BikemapRemoteElevationProviderTest {
 
     private static Set<RangeRequest> expectedRemainingRanges(int length) {
         int chunkBytes = BikemapElevationProvider.DOWNLOAD_CHUNK_BYTES;
-        return Set.of(
+        return new HashSet<>(Arrays.asList(
                 new RangeRequest(range(chunkBytes, 2L * chunkBytes - 1), ETAG),
                 new RangeRequest(range(2L * chunkBytes, 3L * chunkBytes - 1), ETAG),
-                new RangeRequest(range(3L * chunkBytes, length - 1), ETAG));
+                new RangeRequest(range(3L * chunkBytes, length - 1), ETAG)));
     }
 
     private static byte[] largeCog() {
@@ -447,7 +451,34 @@ class BikemapRemoteElevationProviderTest {
         return result;
     }
 
-    private record RangeRequest(String range, String ifMatch) {
+    private static final class RangeRequest {
+        private final String range;
+        private final String ifMatch;
+
+        private RangeRequest(String range, String ifMatch) {
+            this.range = range;
+            this.ifMatch = ifMatch;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other)
+                return true;
+            if (!(other instanceof RangeRequest))
+                return false;
+            RangeRequest request = (RangeRequest) other;
+            return Objects.equals(range, request.range) && Objects.equals(ifMatch, request.ifMatch);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(range, ifMatch);
+        }
+
+        @Override
+        public String toString() {
+            return "RangeRequest[range=" + range + ", ifMatch=" + ifMatch + "]";
+        }
     }
 
     private enum RangeFailure {
@@ -455,7 +486,7 @@ class BikemapRemoteElevationProviderTest {
     }
 
     private void assertDirectoryContains(Set<String> expected) throws IOException {
-        try (var files = Files.list(directory)) {
+        try (Stream<Path> files = Files.list(directory)) {
             assertEquals(expected, files.map(path -> path.getFileName().toString()).collect(Collectors.toSet()));
         }
     }

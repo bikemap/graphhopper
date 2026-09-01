@@ -37,40 +37,39 @@ import java.util.Base64;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BikemapElevationProviderTest {
-    static final String FLOAT32_COG = """
-            SUkqAMAAAABHREFMX1NUUlVDVFVSQUxfTUVUQURBVEFfU0laRT0wMDAxNDAgYnl0ZXMKTEFZT1VUPUlGRFNfQkVGT1JFX0RBVEEK
-            QkxPQ0tfT1JERVI9Uk9XX01BSk9SCkJMT0NLX0xFQURFUj1TSVpFX0FTX1VJTlQ0CkJMT0NLX1RSQUlMRVI9TEFTVF80X0JZVEVT
-            X1JFUEVBVEVECktOT1dOX0lOQ09NUEFUSUJMRV9FRElUSU9OPU5PCiAAEAAAAQMAAQAAAAMAAAABAQMAAQAAAAMAAAACAQMAAQAA
-            ACAAAAADAQMAAQAAAAgAAAAGAQMAAQAAAAEAAAAVAQMAAQAAAAEAAAAcAQMAAQAAAAEAAAA9AQMAAQAAAAMAAABCAQMAAQAAAAAC
-            AABDAQMAAQAAAAACAABEAQQAAQAAANoBAABFAQQAAQAAAGAEAABTAQMAAQAAAAMAAAAOgwwAAwAAAI4BAACChAwABgAAAKYBAACB
-            pAIABwAAAIYBAAAAAAAALTMyNzY4AAAAAAAAAADgPwAAAAAAAOA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-            AAAkQAAAAAAAwEdAAAAAAAAAAABgBAAAeJzs1UERQFAYBsBPCTNSuDrjLIgOZhz0UIT7yyKFIP9uiZ27vKGsdm57AChnuY4nlNWm
-            /gsA5ayJ/wsbh+EOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-            AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-            AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-            AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD97
-            cCAAAAAAAOT/2giqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
-            qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
-            qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
-            qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
-            qirswYEAAAAAAJD/ayOoqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
-            qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
-            qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
-            qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
-            qqqqqqq0B4cEAAAAAIL+v3aFDQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-            AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-            AAAAAAAAAAAAAAAAAGYBXVAJAV1QCQE=
-            """.replaceAll("\\s", "");
+    static final String FLOAT32_COG =
+            "SUkqAMAAAABHREFMX1NUUlVDVFVSQUxfTUVUQURBVEFfU0laRT0wMDAxNDAgYnl0ZXMKTEFZT1VUPUlGRFNfQkVGT1JFX0RBVEEK" +
+            "QkxPQ0tfT1JERVI9Uk9XX01BSk9SCkJMT0NLX0xFQURFUj1TSVpFX0FTX1VJTlQ0CkJMT0NLX1RSQUlMRVI9TEFTVF80X0JZVEVT" +
+            "X1JFUEVBVEVECktOT1dOX0lOQ09NUEFUSUJMRV9FRElUSU9OPU5PCiAAEAAAAQMAAQAAAAMAAAABAQMAAQAAAAMAAAACAQMAAQAA" +
+            "ACAAAAADAQMAAQAAAAgAAAAGAQMAAQAAAAEAAAAVAQMAAQAAAAEAAAAcAQMAAQAAAAEAAAA9AQMAAQAAAAMAAABCAQMAAQAAAAAC" +
+            "AABDAQMAAQAAAAACAABEAQQAAQAAANoBAABFAQQAAQAAAGAEAABTAQMAAQAAAAMAAAAOgwwAAwAAAI4BAACChAwABgAAAKYBAACB" +
+            "pAIABwAAAIYBAAAAAAAALTMyNzY4AAAAAAAAAADgPwAAAAAAAOA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAkQAAAAAAAwEdAAAAAAAAAAABgBAAAeJzs1UERQFAYBsBPCTNSuDrjLIgOZhz0UIT7yyKFIP9uiZ27vKGsdm57AChnuY4nlNWm" +
+            "/gsA5ayJ/wsbh+EOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD97" +
+            "cCAAAAAAAOT/2giqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" +
+            "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" +
+            "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" +
+            "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" +
+            "qirswYEAAAAAAJD/ayOoqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" +
+            "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" +
+            "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" +
+            "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" +
+            "qqqqqqq0B4cEAAAAAIL+v3aFDQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAGYBXVAJAV1QCQE=";
 
     @TempDir
     Path directory;
 
-    private BikemapElevationProvider provider;
+    private TestBikemapElevationProvider provider;
 
     @BeforeEach
     void setUp() throws IOException {
         Files.write(directory.resolve("n46e010.tif"), Base64.getDecoder().decode(FLOAT32_COG));
-        provider = new BikemapElevationProvider(directory.toString());
+        provider = new TestBikemapElevationProvider(directory.toString());
     }
 
     @AfterEach
@@ -106,7 +105,7 @@ class BikemapElevationProviderTest {
         assertTrue(Files.exists(sidecar));
         provider.release();
 
-        provider = new BikemapElevationProvider(directory.toString());
+        provider = new TestBikemapElevationProvider(directory.toString());
         assertEquals(100, provider.getEle(46.9999, 10));
         assertTrue(Files.size(sidecar) > 0);
     }
@@ -121,7 +120,7 @@ class BikemapElevationProviderTest {
         provider.release();
         Files.delete(directory.resolve("n46e010.tif"));
 
-        provider = new BikemapElevationProvider(directory.toString());
+        provider = new TestBikemapElevationProvider(directory.toString());
         provider.setDAType(type);
         assertEquals(100, provider.getEle(46.9999, 10));
         assertTrue(Double.isNaN(provider.getEle(46.5, 10.5)));
@@ -132,7 +131,7 @@ class BikemapElevationProviderTest {
     void reusesLegacyCacheWithoutSourceTiff() throws IOException {
         provider.setAutoRemoveTemporaryFiles(false);
         assertEquals(100, provider.getEle(46.9999, 10));
-        DataAccess heights = provider.getDirectory().getDAs().get("bikemap_n46e010.gh");
+        DataAccess heights = provider.getCreatedDataAccess("bikemap_n46e010.gh");
         heights.setHeader(4, 1);
         for (int header = 32; header < 64; header += 4)
             heights.setHeader(header, 0);
@@ -140,7 +139,7 @@ class BikemapElevationProviderTest {
         provider.release();
         Files.delete(directory.resolve("n46e010.tif"));
 
-        provider = new BikemapElevationProvider(directory.toString());
+        provider = new TestBikemapElevationProvider(directory.toString());
         assertEquals(100, provider.getEle(46.9999, 10));
     }
 
@@ -149,7 +148,7 @@ class BikemapElevationProviderTest {
     void rebuildsCacheWhenLocalSourceMetadataChanges(String changedMetadata) throws IOException {
         provider.setAutoRemoveTemporaryFiles(false);
         assertEquals(100, provider.getEle(46.9999, 10));
-        DataAccess heights = provider.getDirectory().getDAs().get("bikemap_n46e010.gh");
+        DataAccess heights = provider.getCreatedDataAccess("bikemap_n46e010.gh");
         // Give the cached value a recognizable value to distinguish reuse from conversion.
         heights.setShort(0, (short) 123);
         heights.flush();
@@ -162,7 +161,7 @@ class BikemapElevationProviderTest {
             Files.write(source, new byte[]{0}, StandardOpenOption.APPEND);
         }
 
-        provider = new BikemapElevationProvider(directory.toString());
+        provider = new TestBikemapElevationProvider(directory.toString());
         assertEquals(100, provider.getEle(46.9999, 10));
     }
 
@@ -171,13 +170,13 @@ class BikemapElevationProviderTest {
     void rebuildsCacheWithInvalidVersionOrDimensions(int invalidHeader) {
         provider.setAutoRemoveTemporaryFiles(false);
         assertEquals(100, provider.getEle(46.9999, 10));
-        DataAccess heights = provider.getDirectory().getDAs().get("bikemap_n46e010.gh");
+        DataAccess heights = provider.getCreatedDataAccess("bikemap_n46e010.gh");
         heights.setHeader(invalidHeader, 0);
         heights.setShort(0, (short) 123);
         heights.flush();
         provider.release();
 
-        provider = new BikemapElevationProvider(directory.toString());
+        provider = new TestBikemapElevationProvider(directory.toString());
         assertEquals(100, provider.getEle(46.9999, 10));
     }
 
@@ -194,7 +193,7 @@ class BikemapElevationProviderTest {
         provider.setDAType(type);
         provider.setAutoRemoveTemporaryFiles(false);
         assertEquals(100, provider.getEle(46.9999, 10));
-        DataAccess heights = provider.getDirectory().getDAs().get("bikemap_n46e010.gh");
+        DataAccess heights = provider.getCreatedDataAccess("bikemap_n46e010.gh");
         heights.setShort(0, (short) 123);
         heights.flush();
         provider.release();
@@ -204,7 +203,7 @@ class BikemapElevationProviderTest {
             cache.setLength(cache.length() - 10);
         }
 
-        provider = new BikemapElevationProvider(directory.toString());
+        provider = new TestBikemapElevationProvider(directory.toString());
         provider.setDAType(type);
         assertEquals(100, provider.getEle(46.9999, 10));
     }
@@ -223,7 +222,7 @@ class BikemapElevationProviderTest {
         provider.release();
         Files.delete(source);
 
-        provider = new BikemapElevationProvider(directory.toString());
+        provider = new TestBikemapElevationProvider(directory.toString());
         provider.setBaseURL(sourceDirectory.toString());
         assertEquals(100, provider.getEle(46.9999, 10));
     }
@@ -240,7 +239,7 @@ class BikemapElevationProviderTest {
             cache.setLength(100);
         }
 
-        provider = new BikemapElevationProvider(directory.toString());
+        provider = new TestBikemapElevationProvider(directory.toString());
         assertEquals(0, provider.getEle(46.9999, 10));
         assertFalse(Files.exists(sidecar));
     }
