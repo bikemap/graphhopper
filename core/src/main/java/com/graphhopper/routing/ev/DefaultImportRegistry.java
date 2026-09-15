@@ -228,6 +228,16 @@ public class DefaultImportRegistry implements ImportRegistry {
                     (lookup, props) -> new BMIsPleasantParser(
                             lookup.getIntEncodedValue(BmIsPleasant.KEY))
             );
+        else if (name.equals(BmService.KEY))
+            return ImportUnit.create(name, props -> BmService.create(),
+                    (lookup, props) -> new BMServiceParser(
+                            lookup.getEnumEncodedValue(BmService.KEY, BmService.class))
+            );
+        else if (name.equals(BmRampBicycle.KEY))
+            return ImportUnit.create(name, props -> BmRampBicycle.create(),
+                    (lookup, props) -> new BMRampBicycleParser(
+                            lookup.getBooleanEncodedValue(BmRampBicycle.KEY))
+            );
         else if (Curvature.KEY.equals(name))
             return ImportUnit.create(name, props -> Curvature.create(),
                     (lookup, props) -> new CurvatureCalculator(
