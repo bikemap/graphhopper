@@ -12,11 +12,36 @@ The default cache directory `/tmp/<provider name>` will be used. For large areas
 use a SSD disc, thus you need to specify the cache directory:
 `graph.elevation.cache_dir: /myssd/ele_cache/`
 
-For `graph.elevation.provider: bikemap`, set `graph.elevation.cache_dir` to the writable
-`continuous` directory produced by
-`elevation_worker/commands/compute_continuous_tiles.py`. Files must use lowercase SRTM-style
-names such as `n46e010.tif`. GraphHopper writes memory-mapped `bikemap_*.gh` sidecar caches
-next to the COG files. Set `graph.elevation.clear: false` to retain these converted sidecars
+For `graph.elevation.provider: bikemap`, the source tiles are the Float32 COGs produced by
+`elevation_worker/commands/compute_continuous_tiles.py`, with lowercase SRTM-style names such as
+`n46e010.tif`. To read the versioned dataset from S3 and retain only converted caches locally:
+
+```yaml
+graph.elevation.provider: bikemap
+graph.elevation.base_url: s3://bikemap-production-tiles/2026-09/continuous
+graph.elevation.cache_dir: /myssd/bikemap_elevation_cache
+graph.elevation.clear: false
+```
+
+S3 access uses the AWS SDK's default credential and region provider chains (for example, an instance
+role or `AWS_PROFILE`, with `AWS_REGION` or a region configured in the AWS profile). The role needs
+`s3:GetObject` for the source prefix. A missing object returns zero elevation; access-denied and
+other download/decode failures fail the import. S3 can return access denied for a missing key when
+the role lacks `s3:ListBucket`, so grant that permission if missing tiles should be treated as absent.
+An HTTP(S) directory prefix is also supported for sources that do not require AWS request signing.
+
+On the first access to a tile, GraphHopper downloads the complete TIFF to a temporary file, converts
+its full-resolution raster to a memory-mapped `bikemap_*.gh` file, and removes the temporary TIFF.
+Later imports reuse the cache without downloading or checking S3. Unlike the elevation API's sparse
+COG block reads, this conversion needs every pixel in the tile. Keep published dataset revisions
+immutable: changing `base_url` to a different revision invalidates the converted caches; replacing
+objects under the same prefix requires clearing the affected `.gh` files yourself.
+
+For a local dataset, omit `graph.elevation.base_url` and set `graph.elevation.cache_dir` to the
+writable `continuous` directory, or set `base_url` to a separate local source directory. Local TIFFs
+are never removed automatically. Existing converted caches work after their TIFFs are removed;
+when a TIFF is present, changes to its size or modification time rebuild the cache. Files without a
+valid cache still require their source. Set `graph.elevation.clear: false` to retain converted caches
 between imports.
 
 ## Custom Models
