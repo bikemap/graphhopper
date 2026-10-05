@@ -18,6 +18,11 @@
 package com.graphhopper.reader.dem;
 
 import com.graphhopper.storage.DataAccess;
+import com.graphhopper.util.Downloader;
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -27,6 +32,17 @@ import java.awt.Rectangle;
 import java.awt.image.Raster;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.RandomAccessFile;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -42,8 +58,9 @@ import java.util.Set;
  * access to a tile converts its actual raster dimensions and values into GraphHopper's short-based
  * {@link DataAccess} format. The converted data is then memory-mapped by default.
  * <p>
- * The cache directory must be the dataset's {@code continuous} directory and must be writable,
- * because the GraphHopper sidecar caches are stored next to the source COGs.
+ * The source can be a local {@code continuous} directory or a versioned S3/HTTP prefix set via
+ * {@link #setBaseURL(String)}. Only converted caches are retained when using a remote source;
+ * downloaded TIFFs are temporary. Valid caches can be read without the source being available.
  */
 public class BikemapElevationProvider extends TileBasedElevationProvider {
     static final int MIN_LATITUDE = -60;
@@ -51,12 +68,15 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
     static final int MIN_LONGITUDE = -180;
     static final int MAX_LONGITUDE = 180;
 
-    private static final int CACHE_FORMAT_VERSION = 1;
+    private static final int CACHE_FORMAT_VERSION = 2;
     private static final int CACHE_VERSION_HEADER = 4;
     private static final int WIDTH_HEADER = 8;
     private static final int HEIGHT_HEADER = 12;
     private static final int SOURCE_MODIFIED_HEADER = 16;
     private static final int SOURCE_LENGTH_HEADER = 24;
+    private static final int SOURCE_ID_HEADER = 32;
+    // DataAccess reserves 100 bytes before the raster's segment data.
+    private static final int DATA_ACCESS_HEADER_BYTES = 100;
     private static final double PRECISION = 1e7;
     private static final int DEGREE = 1;
     private static final double MIN_ELEVATION = -1_000;
@@ -66,6 +86,7 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
 
     private final Map<String, HeightTile> cacheData = new HashMap<>();
     private final Set<String> missingTiles = new HashSet<>();
+    private S3Client s3Client;
 
     public BikemapElevationProvider() {
         this("");
@@ -74,6 +95,28 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
     public BikemapElevationProvider(String cacheDir) {
         super(cacheDir.isEmpty() ? "/tmp/bikemap" : cacheDir);
         baseUrl = getCacheDir().getAbsolutePath();
+        downloader = new Downloader("GraphHopper BikemapReader");
+    }
+
+    @Override
+    public BikemapElevationProvider setBaseURL(String baseUrl) {
+        super.setBaseURL(baseUrl);
+        if (isRemoteSource()) {
+            URI uri = URI.create(baseUrl);
+            if (uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null
+                    || ("s3".equals(uri.getScheme()) && uri.getPort() != -1))
+                throw new IllegalArgumentException("Elevation base URL must be an S3/HTTP directory prefix");
+            this.baseUrl = baseUrl.replaceAll("/+$", "");
+        } else {
+            if (baseUrl.contains("://"))
+                throw new IllegalArgumentException("Unsupported elevation source: " + baseUrl);
+            this.baseUrl = new File(baseUrl).getAbsoluteFile().toPath().normalize().toString();
+        }
+        return this;
+    }
+
+    private boolean isRemoteSource() {
+        return baseUrl.startsWith("s3://") || baseUrl.startsWith("https://") || baseUrl.startsWith("http://");
     }
 
     @Override
@@ -89,33 +132,36 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
                 if (missingTiles.contains(fileName))
                     return 0;
 
-                File source = new File(getCacheDir(), fileName);
-                if (!source.isFile()) {
+                tile = loadTile(fileName, getMinLatitude(lat), getMinLongitude(lon));
+                if (tile == null) {
                     missingTiles.add(fileName);
                     return 0;
                 }
-
-                tile = loadTile(source, getMinLatitude(lat), getMinLongitude(lon));
                 cacheData.put(fileName, tile);
             }
         }
         return tile.getHeight(lat, lon);
     }
 
-    private HeightTile loadTile(File source, int minLat, int minLon) {
-        String cacheName = "bikemap_" + source.getName().substring(0, source.getName().length() - 4) + ".gh";
+    private HeightTile loadTile(String fileName, int minLat, int minLon) {
+        File source = isRemoteSource() ? null : new File(baseUrl, fileName);
+        int[] sourceId = sourceId();
+        String cacheName = "bikemap_" + fileName.substring(0, fileName.length() - 4) + ".gh";
         DataAccess heights = getDirectory().create(cacheName);
         boolean loadExisting = false;
         try {
-            loadExisting = heights.loadExisting();
+            loadExisting = isCompleteCache(new File(getCacheDir(), cacheName)) && heights.loadExisting();
         } catch (Exception ex) {
             logger.warn("Cannot load {}, rebuilding it: {}", cacheName, ex.getMessage());
         }
 
-        if (loadExisting && !matchesSource(heights, source)) {
+        if (loadExisting && !isValidCache(heights, source, sourceId))
+            loadExisting = false;
+
+        if (!loadExisting) {
+            // Also discard incomplete mappings after loadExisting failed or threw.
             getDirectory().remove(cacheName);
             heights = getDirectory().create(cacheName);
-            loadExisting = false;
         }
 
         int width;
@@ -124,7 +170,21 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
             width = heights.getHeader(WIDTH_HEADER);
             height = heights.getHeader(HEIGHT_HEADER);
         } else {
+            Path temporarySource = null;
             try {
+                if (isRemoteSource()) {
+                    Files.createDirectories(getCacheDir().toPath());
+                    temporarySource = Files.createTempFile(getCacheDir().toPath(), "bikemap-source-", ".tif");
+                    if (!downloadSource(fileName, temporarySource)) {
+                        getDirectory().remove(cacheName);
+                        return null;
+                    }
+                    source = temporarySource.toFile();
+                } else if (!source.isFile()) {
+                    getDirectory().remove(cacheName);
+                    return null;
+                }
+                Files.createDirectories(getCacheDir().toPath());
                 RasterSize rasterSize = readFileIntoDataAccess(source, heights);
                 width = rasterSize.width;
                 height = rasterSize.height;
@@ -133,10 +193,23 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
                 heights.setHeader(HEIGHT_HEADER, height);
                 setLongHeader(heights, SOURCE_MODIFIED_HEADER, source.lastModified());
                 setLongHeader(heights, SOURCE_LENGTH_HEADER, source.length());
+                for (int i = 0; i < sourceId.length; i++)
+                    heights.setHeader(SOURCE_ID_HEADER + 4 * i, sourceId[i]);
                 heights.flush();
+            } catch (IOException ex) {
+                getDirectory().remove(cacheName);
+                throw new RuntimeException("Cannot fetch elevation COG " + fileName, ex);
             } catch (RuntimeException ex) {
                 getDirectory().remove(cacheName);
                 throw ex;
+            } finally {
+                if (temporarySource != null) {
+                    try {
+                        Files.deleteIfExists(temporarySource);
+                    } catch (IOException ex) {
+                        throw new RuntimeException("Cannot remove temporary elevation COG " + temporarySource, ex);
+                    }
+                }
             }
         }
 
@@ -146,15 +219,91 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
         return tile;
     }
 
-    private boolean matchesSource(DataAccess heights, File source) {
+    private boolean isCompleteCache(File cache) throws IOException {
+        if (!cache.isFile())
+            return false;
+        // Check before loading: a writable memory mapping can silently extend a truncated file.
+        try (RandomAccessFile input = new RandomAccessFile(cache, "r")) {
+            if (!"GH".equals(input.readUTF()))
+                return false;
+            long dataLength = input.readLong() - DATA_ACCESS_HEADER_BYTES;
+            int segmentSize = input.readInt();
+            if (dataLength <= 0 || segmentSize < 128 || Integer.bitCount(segmentSize) != 1)
+                return false;
+            // MMAP stores the physical file length; RAM_STORE stores the capacity without the header.
+            // Both yield the same segment count when rounded up (segments are at least 128 bytes).
+            long segments = dataLength / segmentSize + (dataLength % segmentSize == 0 ? 0 : 1);
+            return segments <= (Long.MAX_VALUE - DATA_ACCESS_HEADER_BYTES) / segmentSize
+                    && input.length() == DATA_ACCESS_HEADER_BYTES + segments * segmentSize;
+        }
+    }
+
+    private boolean isValidCache(DataAccess heights, File source, int[] sourceId) {
         int width = heights.getHeader(WIDTH_HEADER);
         int height = heights.getHeader(HEIGHT_HEADER);
-        return heights.getHeader(CACHE_VERSION_HEADER) == CACHE_FORMAT_VERSION
-                && width > 1
-                && height > 1
-                && heights.getCapacity() >= 2L * width * height
-                && getLongHeader(heights, SOURCE_MODIFIED_HEADER) == source.lastModified()
-                && getLongHeader(heights, SOURCE_LENGTH_HEADER) == source.length();
+        if (width < 2 || width != height || heights.getCapacity() < 2L * width * height)
+            return false;
+
+        int version = heights.getHeader(CACHE_VERSION_HEADER);
+        if (version == 1) {
+            // Existing sidecars had no source namespace and were always built beside local TIFFs.
+            if (isRemoteSource() || !baseUrl.equals(getCacheDir().getAbsolutePath()))
+                return false;
+        } else if (version == CACHE_FORMAT_VERSION) {
+            for (int i = 0; i < sourceId.length; i++)
+                if (heights.getHeader(SOURCE_ID_HEADER + 4 * i) != sourceId[i])
+                    return false;
+        } else {
+            return false;
+        }
+
+        return source == null || !source.isFile()
+                || (getLongHeader(heights, SOURCE_MODIFIED_HEADER) == source.lastModified()
+                && getLongHeader(heights, SOURCE_LENGTH_HEADER) == source.length());
+    }
+
+    private int[] sourceId() {
+        try {
+            ByteBuffer digest = ByteBuffer.wrap(MessageDigest.getInstance("SHA-256")
+                    .digest(baseUrl.getBytes(StandardCharsets.UTF_8)));
+            int[] id = new int[8];
+            for (int i = 0; i < id.length; i++)
+                id[i] = digest.getInt();
+            return id;
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private boolean downloadSource(String fileName, Path target) throws IOException {
+        if (baseUrl.startsWith("s3://")) {
+            URI uri = URI.create(baseUrl + "/" + fileName);
+            if (s3Client == null)
+                s3Client = createS3Client();
+            GetObjectRequest request = GetObjectRequest.builder()
+                    .bucket(uri.getHost()).key(uri.getPath().substring(1)).build();
+            try (InputStream input = s3Client.getObject(request)) {
+                Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
+            } catch (NoSuchKeyException ex) {
+                return false;
+            }
+        } else {
+            HttpURLConnection connection = downloader.createConnection(baseUrl + "/" + fileName);
+            try {
+                if (connection.getResponseCode() == HttpURLConnection.HTTP_NOT_FOUND)
+                    return false;
+                try (InputStream input = downloader.fetch(connection, false)) {
+                    Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                connection.disconnect();
+            }
+        }
+        return true;
+    }
+
+    S3Client createS3Client() {
+        return S3Client.builder().httpClientBuilder(UrlConnectionHttpClient.builder()).build();
     }
 
     private RasterSize readFileIntoDataAccess(File source, DataAccess heights) {
@@ -278,6 +427,11 @@ public class BikemapElevationProvider extends TileBasedElevationProvider {
                 dir.clear();
             else
                 dir.close();
+            dir = null;
+        }
+        if (s3Client != null) {
+            s3Client.close();
+            s3Client = null;
         }
     }
 

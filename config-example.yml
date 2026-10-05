@@ -130,8 +130,13 @@ graphhopper:
   # graph.elevation.provider: srtm
 
   # default location for cache is /tmp/srtm
-  # For the bikemap provider this must be the writable continuous COG dataset directory.
+  # For bikemap this stores converted .gh caches; without base_url it also contains the source COGs.
   # graph.elevation.cache_dir: ./srtmprovider/
+
+  # Read Bikemap's versioned COGs from S3 using the AWS credentials/region configuration:
+  # graph.elevation.base_url: s3://bikemap-production-tiles/2026-09/continuous
+  # Keep converted elevation caches between imports (temporary remote TIFFs are always removed):
+  # graph.elevation.clear: false
 
   # If you have a slow disk or plenty of RAM change the default MMAP to:
   # graph.elevation.dataaccess: RAM_STORE
