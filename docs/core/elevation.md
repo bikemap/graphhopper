@@ -21,6 +21,8 @@ graph.elevation.provider: bikemap
 graph.elevation.base_url: s3://bikemap-production-tiles/2026-09/continuous
 graph.elevation.cache_dir: /myssd/bikemap_elevation_cache
 graph.elevation.clear: false
+# Optional: cap worker count (default: CPUs available to the JVM).
+# graph.elevation.threads: 8
 ```
 
 S3 access uses the AWS SDK's default credential and region provider chains (for example, an instance
@@ -36,6 +38,17 @@ Later imports reuse the cache without downloading or checking S3. Unlike the ele
 COG block reads, this conversion needs every pixel in the tile. Keep published dataset revisions
 immutable: changing `base_url` to a different revision invalidates the converted caches; replacing
 objects under the same prefix requires clearing the affected `.gh` files yourself.
+
+Uncached tiles use parallel S3 range requests in 8 MiB parts and parallel decoding/rounding of
+full-width 512-row bands. Each decoder has its own TIFF reader; cache writes are serialized and the
+cache is published only after all workers finish. `graph.elevation.threads` defaults to the number
+of CPUs available to the JVM; set it to a smaller positive number to reduce concurrency, or `1`
+for sequential work. Active decoders share a budget of one quarter of the JVM's maximum heap,
+estimated at 10 bytes per band pixel plus 16 MiB per reader, with at least one decoder.
+S3 parts are constrained to the initial object's ETag so
+an object replaced during download cannot produce a mixed cache. HTTP(S) downloads remain sequential,
+but their conversion uses the same parallel decoders. These settings speed up tile cache creation;
+they do not parallelize OSM graph construction or reads from existing caches.
 
 For a local dataset, omit `graph.elevation.base_url` and set `graph.elevation.cache_dir` to the
 writable `continuous` directory, or set `base_url` to a separate local source directory. Local TIFFs

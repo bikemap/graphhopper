@@ -726,7 +726,8 @@ public class GraphHopper {
         } else if (eleProviderStr.equalsIgnoreCase("cgiar")) {
             elevationProvider = new CGIARProvider(cacheDirStr);
         } else if (eleProviderStr.equalsIgnoreCase("bikemap")) {
-            elevationProvider = new BikemapElevationProvider(cacheDirStr);
+            elevationProvider = new BikemapElevationProvider(cacheDirStr)
+                    .setThreads(ghConfig.getInt("graph.elevation.threads", Runtime.getRuntime().availableProcessors()));
         } else if (eleProviderStr.equalsIgnoreCase("gmted")) {
             elevationProvider = new GMTEDProvider(cacheDirStr);
         } else if (eleProviderStr.equalsIgnoreCase("srtmgl1")) {
