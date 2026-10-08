@@ -137,6 +137,9 @@ graphhopper:
   # graph.elevation.base_url: s3://bikemap-production-tiles/2026-09/continuous
   # Keep converted elevation caches between imports (temporary remote TIFFs are always removed):
   # graph.elevation.clear: false
+  # Bikemap S3 download/conversion workers default to available CPUs; decoding is also heap-limited.
+  # Set to 1 for sequential work, or a positive number to cap concurrency:
+  # graph.elevation.threads: 8
 
   # If you have a slow disk or plenty of RAM change the default MMAP to:
   # graph.elevation.dataaccess: RAM_STORE
