@@ -7,7 +7,7 @@
     <packaging>jar</packaging>
     <version>11.0-SNAPSHOT</version>
     <properties>
-        <graphhopper-maps.version>f6005d7</graphhopper-maps.version>
+        <graphhopper-maps.version>6685b707a76870b4964cb179277bc90e64006630</graphhopper-maps.version>
     </properties>
     <name>GraphHopper Dropwizard Bundle</name>
     <description>Use the GraphHopper routing engine as a web-service</description>
@@ -134,8 +134,8 @@
                             <goal>install-node-and-npm</goal>
                         </goals>
                         <configuration>
-                            <nodeVersion>v20.14.0</nodeVersion>
-                            <npmVersion>10.7.0</npmVersion>
+                            <nodeVersion>v24.12.0</nodeVersion>
+                            <npmVersion>11.6.2</npmVersion>
                         </configuration>
                     </execution>
                     <execution>
@@ -148,7 +148,7 @@
                             <!--suppress UnresolvedMavenProperty (IntelliJ shows an error otherwise...)-->
                             <arguments>
                                 pack --pack-destination=${basedir}/target
-                                git@github.com:bikemap/graphhopper-maps.git#${graphhopper-maps.version}
+                                git+https://github.com/bikemap/graphhopper-maps.git#${graphhopper-maps.version}
                             </arguments>
                         </configuration>
                     </execution>
@@ -175,6 +175,8 @@
                         <phase>process-resources</phase>
                         <configuration>
                             <target>
+                                <!-- Remove the old entry point so stale assets cannot hide an incomplete bundle. -->
+                                <delete file="${basedir}/target/classes/com/graphhopper/maps/index.html"/>
                                 <untar compression="gzip"
                                        src="${basedir}/target/graphhopper-maps-0.0.1.tgz"
                                        dest="${basedir}/target/classes/com/graphhopper/maps">
@@ -184,6 +186,13 @@
                                     </patternset>
                                     <mapper type="regexp" from="package\/dist\/(.*)" to="\1"/>
                                 </untar>
+                                <fail message="GraphHopper Maps bundle is missing package/dist/index.html. Ensure its prepare script builds Maps and its npm package includes dist/ before packaging GraphHopper.">
+                                    <condition>
+                                        <not>
+                                            <available file="${basedir}/target/classes/com/graphhopper/maps/index.html" type="file"/>
+                                        </not>
+                                    </condition>
+                                </fail>
                             </target>
                         </configuration>
                         <goals>
