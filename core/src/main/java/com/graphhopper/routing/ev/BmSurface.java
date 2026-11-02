@@ -37,7 +37,7 @@ public enum BmSurface {
 
     static {
         for (BmSurface surface : values()) {
-            if (surface == MISSING || surface == OTHER || surface == LOOSE_GRAVEL)
+            if (surface == MISSING || surface == OTHER)
                 continue;
             SURFACE_MAP.put(surface.toString(), surface);
         }

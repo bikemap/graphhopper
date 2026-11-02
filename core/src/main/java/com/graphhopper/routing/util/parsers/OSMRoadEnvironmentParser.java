@@ -100,7 +100,7 @@ public class OSMRoadEnvironmentParser implements TagParser {
         else if (readerWay.hasTag("cycleway", "share_busway"))
             roadEnvironment = CYCLE_SHARE_BUSWAY;
         else if (readerWay.hasTag("cycleway:smoothness", "good"))
-            roadEnvironment = CYCLE_SHARE_BUSWAY;
+            roadEnvironment = CYCLE_SMOOTHNESS_GOOD;
         else if (readerWay.hasTag("bicycle", "yes"))
             roadEnvironment = BICYCLE_YES;
         else if (readerWay.hasTag("bicycle", "no"))
