@@ -25,8 +25,10 @@ import java.util.Map;
 
 public enum BmWayType {
     // Order is important to make ordinal roughly comparable
+    MISSING,
+
     CYCLEWAY, LIVING_STREET, QUIET_ROAD, PATH, TRACK, ACCESS_ROAD, PEDESTRIAN_AREA, ROAD, STEPS,
-    BUSY_ROAD, MISSING;
+    BUSY_ROAD;
 
     public static final String KEY = "bm_way_type";
 
