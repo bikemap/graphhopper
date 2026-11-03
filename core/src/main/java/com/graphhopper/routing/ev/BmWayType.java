@@ -86,6 +86,8 @@ public enum BmWayType {
     }
 
     public boolean isPleasant() {
-        return this.ordinal() <= ACCESS_ROAD.ordinal();
+        int wayTypeOrdinal = this.ordinal();
+
+        return MISSING.ordinal() < wayTypeOrdinal && wayTypeOrdinal <= ACCESS_ROAD.ordinal();
     }
 }
