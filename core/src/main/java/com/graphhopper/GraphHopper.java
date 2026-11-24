@@ -109,6 +109,8 @@ public class GraphHopper {
     private LockFactory lockFactory = new NativeFSLockFactory();
     private boolean allowWrites = true;
     private boolean fullyLoaded = false;
+    private boolean importCheckpoint;
+    private String checkpointSettings;
     private final OSMReaderConfig osmReaderConfig = new OSMReaderConfig();
     // for routing
     private final RouterConfig routerConfig = new RouterConfig();
@@ -499,6 +501,9 @@ public class GraphHopper {
             graphHopperFolder = pruneFileEnd(osmFile) + "-gh";
         }
         ghLocation = graphHopperFolder;
+        importCheckpoint = ghConfig.getBool("graph.import_checkpoint", false);
+        if (importCheckpoint)
+            checkpointSettings = GraphImportCheckpoint.settings(ghConfig);
 
         countryRuleFactory = ghConfig.getBool("country_rules.enabled", false) ? new CountryRuleFactory() : null;
         customAreasDirectory = ghConfig.getString("custom_areas.directory", customAreasDirectory);
@@ -821,20 +826,9 @@ public class GraphHopper {
      * Creates the graph from OSM data.
      */
     protected void process(boolean closeEarly) {
-        prepareImport();
-        if (encodingManager == null)
-            throw new IllegalStateException("The EncodingManager must be created in `prepareImport()`");
         GHDirectory directory = new GHDirectory(ghLocation, dataAccessDefaultType);
         directory.configure(dataAccessConfig);
-        baseGraph = new BaseGraph.Builder(getEncodingManager())
-                .setDir(directory)
-                .set3D(hasElevation())
-                .withTurnCosts(encodingManager.needsTurnCostsSupport())
-                .setSegmentSize(defaultSegmentSize)
-                .build();
-        properties = new StorableProperties(directory);
-        checkProfilesConsistency();
-
+        GraphImportCheckpoint checkpoint = new GraphImportCheckpoint(ghLocation);
         GHLock lock = null;
         try {
             if (directory.getDefaultType().isStoring()) {
@@ -844,20 +838,94 @@ public class GraphHopper {
                     throw new RuntimeException("To avoid multiple writers we need to obtain a write lock but it failed. In " + ghLocation, lock.getObtainFailedReason());
             }
             ensureWriteAccess();
-
-            importOSM();
-            postImportOSM();
+            properties = new StorableProperties(directory);
+            if (checkpoint.isIncomplete())
+                throw new IllegalStateException("Import interrupted outside subnetwork preparation. Retry with a fresh graph.location: " + ghLocation);
+            if (checkpoint.exists()) {
+                resumeOSMCheckpoint(directory, checkpoint);
+            } else {
+                prepareImport();
+                initializeImportGraph(directory);
+                if (importCheckpoint) {
+                    // Recheck under the write lock in case another import finished since load().
+                    if (Files.exists(Path.of(ghLocation, "properties")))
+                        throw new IllegalStateException("Graph files already exist in " + ghLocation + ". Reload the graph or use a fresh graph.location.");
+                    GraphImportCheckpoint.recordSource(properties, osmFile == null ? null : _getOSMFile());
+                    checkpoint.begin();
+                }
+                importOSM();
+                postImportOSM();
+                if (importCheckpoint) {
+                    properties.put("profiles", getProfilesString());
+                    writeEncodingManagerToProperties();
+                    properties.put("import.checkpoint.settings", checkpointSettings);
+                    baseGraph.flush();
+                    checkpoint.save(properties);
+                    logger.info("Saved OSM import checkpoint in {}", ghLocation);
+                }
+            }
             cleanUp();
-
+            if (importCheckpoint) {
+                checkpoint.finishSubnetworks();
+                properties.getAll().keySet().removeIf(key -> key.startsWith("import.checkpoint."));
+            }
             properties.put("profiles", getProfilesString());
             writeEncodingManagerToProperties();
-
             postProcessing(closeEarly);
             flush();
+            if (importCheckpoint)
+                checkpoint.complete();
+        } catch (IOException ex) {
+            throw new UncheckedIOException("Cannot update OSM import checkpoint in " + ghLocation, ex);
         } finally {
             if (lock != null)
                 lock.release();
         }
+    }
+
+    private void resumeOSMCheckpoint(Directory directory, GraphImportCheckpoint checkpoint) throws IOException {
+        if (!importCheckpoint)
+            throw new IllegalStateException("Set graph.import_checkpoint to true to resume the OSM import in " + ghLocation);
+        checkpoint.restore(properties);
+        if (!checkpointSettings.equals(properties.get("import.checkpoint.settings")) || !getProfilesString().equals(properties.get("profiles")))
+            throw new IllegalStateException("Import settings or profiles differ from the OSM checkpoint in " + ghLocation);
+        GraphImportCheckpoint.checkSource(properties, osmFile == null ? null : _getOSMFile());
+        encodingManager = EncodingManager.fromProperties(properties);
+        initializeImportGraph(directory);
+        if (!baseGraph.loadExisting())
+            throw new IllegalStateException("Base graph files are missing from the OSM checkpoint in " + ghLocation);
+        properties.create(100);
+        logger.info("Resuming subnetwork preparation from the OSM checkpoint in {}", ghLocation);
+        clearPartialSubnetworkFlags();
+    }
+
+    private void initializeImportGraph(Directory directory) {
+        baseGraph = buildBaseGraph(directory);
+        checkProfilesConsistency();
+        if (importCheckpoint && (!directory.getDefaultType().isStoring() ||
+                directory.getDAs().values().stream().anyMatch(da -> !da.getType().isStoring())))
+            throw new IllegalArgumentException("graph.import_checkpoint requires persistent storage for all base graph files");
+    }
+
+    private BaseGraph buildBaseGraph(Directory directory) {
+        return new BaseGraph.Builder(getEncodingManager())
+                .setDir(directory)
+                .set3D(hasElevation())
+                .withTurnCosts(encodingManager.needsTurnCostsSupport())
+                .setSegmentSize(defaultSegmentSize)
+                .build();
+    }
+
+    private void clearPartialSubnetworkFlags() {
+        // MMAP can persist edge updates even if cleanup never reached flush(). Restore the original flags
+        // before any weighting reads them, including when retrying with subnetwork preparation disabled.
+        List<BooleanEncodedValue> subnetworks = profilesByName.values().stream()
+                .map(p -> encodingManager.getBooleanEncodedValue(Subnetwork.key(p.getName()))).toList();
+        AllEdgesIterator edges = baseGraph.getAllEdges();
+        while (edges.next())
+            for (BooleanEncodedValue subnetwork : subnetworks)
+                if (edges.get(subnetwork))
+                    edges.set(subnetwork, false);
     }
 
     protected void prepareImport() {
@@ -1142,18 +1210,16 @@ public class GraphHopper {
                 if (!lock.tryLock())
                     throw new RuntimeException("To avoid reading partial data we need to obtain the read lock but it failed. In " + ghLocation, lock.getObtainFailedReason());
             }
+            GraphImportCheckpoint checkpoint = new GraphImportCheckpoint(ghLocation);
+            if (checkpoint.exists() || checkpoint.isIncomplete())
+                return false;
             properties = new StorableProperties(directory);
             if (!properties.loadExisting())
                 // the -gh folder exists, but there is no properties file. it might be just empty, so let's act as if
                 // the import did not run yet or is not complete for some reason
                 return false;
             encodingManager = EncodingManager.fromProperties(properties);
-            baseGraph = new BaseGraph.Builder(encodingManager)
-                    .setDir(directory)
-                    .set3D(hasElevation())
-                    .withTurnCosts(encodingManager.needsTurnCostsSupport())
-                    .setSegmentSize(defaultSegmentSize)
-                    .build();
+            baseGraph = buildBaseGraph(directory);
             checkProfilesConsistency();
             baseGraph.loadExisting();
             String storedProfiles = properties.get("profiles");

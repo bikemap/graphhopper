@@ -4,6 +4,12 @@ graphhopper:
   datareader.file: ""
   # Local folder used by graphhopper to store its data
   graph.location: graph-cache
+  # Enable before a new import to save the base graph just before subnetwork preparation.
+  # If that preparation crashes, rerun the same command with the same graph.location and import settings.
+  # The retry starts subnetwork preparation from the beginning. You can adjust prepare.subnetworks.threads.
+  # Requires persistent storage and one extra graph flush. The checkpoint expires when cleanup finishes,
+  # before the location index, public transit, LM and CH preparations.
+  # graph.import_checkpoint: true
 
 
   ##### Routing Profiles ####
